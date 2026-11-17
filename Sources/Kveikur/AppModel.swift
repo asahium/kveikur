@@ -14,6 +14,8 @@ final class AppModel: ObservableObject {
 
     @Published private(set) var roots: [URL]
     @Published private(set) var scanStatus = ""
+    /// Bumped after each recorded play so the statistics window and smart playlists refresh.
+    @Published private(set) var historyVersion = 0
     @Published var showTagTitles: Bool { didSet { defaults.set(showTagTitles, forKey: "showTagTitles") } }
     @Published var lyricsAutoFetch: Bool { didSet { defaults.set(lyricsAutoFetch, forKey: "lyricsAutoFetch") } }
     @Published var geniusToken: String { didSet { defaults.set(geniusToken, forKey: "geniusToken") } }
@@ -54,6 +56,10 @@ final class AppModel: ObservableObject {
         playlistsFolder = pl
         playlists = PlaylistStore(folder: pl)
         lyrics.saveSidecar = saveLyricsSidecar
+        scrobbler.onListen = { [weak self] m, at in
+            store.recordPlay(m, at: at)
+            self?.historyVersion += 1
+        }
 
         scanner.onProgress = { [weak self] p in
             self?.scanStatus = p.running ? "Indexing \(p.processed)/\(p.total)" : ""

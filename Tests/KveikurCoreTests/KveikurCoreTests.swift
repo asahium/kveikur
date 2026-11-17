@@ -759,3 +759,81 @@ final class CueTests: XCTestCase {
         XCTAssertNil(CueSheet.load(cue))
     }
 }
+
+final class DuplicateTests: XCTestCase {
+    private func track(_ path: String, _ title: String?, artist: String? = "Artist", album: String? = "Album",
+                       duration: Double = 200, lossless: Bool, size: Int64 = 1_000) -> TrackMetadata {
+        var t = TrackMetadata(path: path, mtime: 1, size: size)
+        t.title = title
+        t.artist = artist
+        t.album = album
+        t.duration = duration
+        t.bitrate = lossless ? 900 : 320
+        t.format = SourceFormat(codec: lossless ? "FLAC" : "MP3", sampleRate: 44_100, bitDepth: lossless ? 16 : 0, channels: 2, lossless: lossless)
+        return t
+    }
+
+    func testAlbumCopiesGroupAndLosslessWins() {
+        let titles = ["One", "Two", "Three", "Four"]
+        var all: [TrackMetadata] = []
+        for (i, t) in titles.enumerated() {
+            all.append(track("/M/Album (MP3)/0\(i + 1) \(t).mp3", t, duration: 200 + Double(i * 30), lossless: false))
+            all.append(track("/M/Album [FLAC]/0\(i + 1) \(t).flac", t, duration: 201 + Double(i * 30), lossless: true, size: 30_000))
+        }
+        // Same title, very different length: a different recording.
+        all.append(track("/M/Live/One.flac", "One", album: "Live", duration: 420, lossless: true))
+        let groups = DuplicateFinder.find(all)
+        XCTAssertEqual(groups.count, 1)
+        let g = groups[0]
+        XCTAssertEqual(g.kind, .album)
+        XCTAssertEqual(Set(g.versions.map(\.path)), ["/M/Album (MP3)", "/M/Album [FLAC]"])
+        XCTAssertEqual(g.versions.first { $0.isBest }?.path, "/M/Album [FLAC]")
+        XCTAssertEqual(g.reclaimable, 4_000)
+    }
+
+    func testUntaggedFilesMatchByName() {
+        let all = [
+            track("/M/a/01 - Песня.mp3", nil, artist: nil, album: nil, lossless: false),
+            track("/M/b/Песня.flac", nil, artist: nil, album: nil, duration: 201, lossless: true),
+            track("/M/c/Другая.flac", nil, artist: nil, album: nil, lossless: true),
+        ]
+        let groups = DuplicateFinder.find(all)
+        XCTAssertEqual(groups.count, 1)
+        XCTAssertEqual(groups[0].kind, .track)
+        XCTAssertEqual(groups[0].versions.count, 2)
+    }
+}
+
+final class HistoryTests: XCTestCase {
+    func testPlaysAggregateAndFeedSmartLists() throws {
+        let store = try LibraryStore(url: FileManager.default.temporaryDirectory.appendingPathComponent("\(UUID()).sqlite"))
+        var a = TrackMetadata(path: "/M/a.flac", mtime: 2, size: 1)
+        a.artist = "Sigur Rós"; a.album = "()"; a.title = "Untitled"; a.duration = 300
+        var b = TrackMetadata(path: "/M/b.flac", mtime: 1, size: 1)
+        b.artist = "sigur rós"; b.title = "Other"; b.duration = 60
+        let c = TrackMetadata(path: "/M/c.flac", mtime: 3, size: 1)
+        store.upsert([a, b, c])
+        let now = Date()
+        store.recordPlay(a, at: now.addingTimeInterval(-86_400 * 40))
+        store.recordPlay(a, at: now)
+        store.recordPlay(b, at: now.addingTimeInterval(-60))
+
+        let all = store.stats(since: nil)
+        XCTAssertEqual(all.plays, 3)
+        XCTAssertEqual(all.seconds, 660)
+        XCTAssertEqual(all.artists, 1)
+        XCTAssertEqual(all.topArtists.first?.plays, 3)
+        XCTAssertEqual(all.topTracks.first?.key, a.path)
+
+        let month = store.stats(since: now.addingTimeInterval(-86_400 * 30))
+        XCTAssertEqual(month.plays, 2)
+        XCTAssertEqual(month.days.count, 31)
+        XCTAssertEqual(month.days.last?.seconds, 360)
+
+        XCTAssertEqual(store.smartList(.mostPlayed), [a.path, b.path])
+        XCTAssertEqual(store.smartList(.recentlyPlayed), [a.path, b.path])
+        XCTAssertEqual(store.smartList(.neverPlayed), [c.path])
+        XCTAssertEqual(store.smartList(.recentlyAdded).first, c.path)
+        XCTAssertEqual(store.playCount(a.path).plays, 2)
+    }
+}

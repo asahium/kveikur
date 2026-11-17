@@ -63,8 +63,13 @@ final class FileActions {
     // MARK: Trash
 
     func trash(_ entries: [Entry]) {
-        let urls = entries.filter(Self.canModify).compactMap(\.url)
-        guard !urls.isEmpty, let window else { return }
+        guard let window else { return }
+        trash(urls: entries.filter(Self.canModify).compactMap(\.url), from: window)
+    }
+
+    /// Asks first (Cancel is the default button), then trashes and updates queue, caches and the index.
+    func trash(urls: [URL], from window: NSWindow, then done: (([URL]) -> Void)? = nil) {
+        guard !urls.isEmpty else { return }
         let alert = NSAlert()
         alert.alertStyle = .warning
         alert.messageText = urls.count == 1 ? "Move “\(urls[0].lastPathComponent)” to the Trash?"
@@ -80,11 +85,14 @@ final class FileActions {
         cancel.keyEquivalent = "\r"
         alert.beginSheetModal(for: window) { [weak self] response in
             guard response == .alertFirstButtonReturn else { return }
-            MainActor.assumeIsolated { self?.performTrash(urls) }
+            MainActor.assumeIsolated {
+                let moved = self?.performTrash(urls, window: window) ?? []
+                done?(moved)
+            }
         }
     }
 
-    private func performTrash(_ urls: [URL]) {
+    private func performTrash(_ urls: [URL], window: NSWindow) -> [URL] {
         let r = FileOperations.trash(urls)
         if !r.moved.isEmpty {
             app.player.remapQueue { FileOperations.isInside($0, r.moved) ? nil : $0 }
@@ -95,8 +103,9 @@ final class FileActions {
         }
         if let (u, error) = r.failed.first {
             show(error, title: r.failed.count == 1 ? "Couldn't move “\(u.lastPathComponent)” to the Trash"
-                                                   : "\(r.failed.count) items couldn't be moved to the Trash")
+                                                   : "\(r.failed.count) items couldn't be moved to the Trash", in: window)
         }
+        return r.moved
     }
 
     // MARK: Tags
@@ -175,11 +184,11 @@ final class FileActions {
         }
     }
 
-    private func show(_ error: Error, title: String) {
+    private func show(_ error: Error, title: String, in target: NSWindow? = nil) {
         let a = NSAlert()
         a.alertStyle = .warning
         a.messageText = title
         a.informativeText = error.localizedDescription
-        if let window { a.beginSheetModal(for: window) { _ in } } else { a.runModal() }
+        if let w = target ?? window { a.beginSheetModal(for: w) { _ in } } else { a.runModal() }
     }
 }

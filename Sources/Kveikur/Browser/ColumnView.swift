@@ -93,6 +93,8 @@ final class ColumnController: NSObject, NSTableViewDataSource, NSTableViewDelega
     private static let symbols: [Entry.Kind: String] = [
         .root: "music.note.house.fill", .folder: "folder.fill", .track: "music.note",
         .playlist: "music.note.list", .playlistsRoot: "list.bullet.rectangle",
+        .smart(.mostPlayed): "flame", .smart(.recentlyPlayed): "clock.arrow.circlepath",
+        .smart(.recentlyAdded): "sparkles", .smart(.neverPlayed): "circle.dashed",
     ]
 
     init(role: Role) {
@@ -176,13 +178,13 @@ final class ColumnController: NSObject, NSTableViewDataSource, NSTableViewDelega
         }()
         let e = entries[row]
         let playing = e.kind == .track && e.url?.path == playingPath
-        let symbol = playing ? "speaker.wave.2.fill" : (Self.symbols[e.kind] ?? "doc")
+        let symbol = playing ? "speaker.wave.2.fill" : (Self.symbols[e.kind] ?? (e.isContainer ? "gearshape" : "doc"))
         cell.icon.image = NSImage(systemSymbolName: symbol, accessibilityDescription: nil)
         cell.name.stringValue = browser?.displayName(e) ?? e.name
         let marked = role == .current && (browser?.isMarked(e, at: row) ?? false)
         let base: NSColor = switch e.kind {
         case .folder, .root, .playlistsRoot: Theme.folder
-        case .playlist: Theme.playlist
+        case .playlist, .smart: Theme.playlist
         case .track: Theme.text
         }
         cell.nameColor = marked ? Theme.marked : (playing ? Theme.playing : base)

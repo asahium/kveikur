@@ -8,6 +8,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, NSMe
     private var main: MainViewController!
     private var settingsWindow: NSWindow?
     private var equalizerWindow: NSWindow?
+    private var duplicatesWindow: NSWindow?
+    private var statisticsWindow: NSWindow?
 
     func applicationDidFinishLaunching(_ notification: Notification) {
         LegacyMigration.run()
@@ -70,6 +72,47 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, NSMe
         equalizerWindow?.makeKeyAndOrderFront(nil)
     }
 
+    @objc func showDuplicates() {
+        if duplicatesWindow == nil {
+            let m = DuplicatesModel(app: model)
+            m.onShow = { [weak self] u in self?.showInBrowser(u) }
+            let w = auxWindow(NSHostingController(rootView: DuplicatesView(model: m)), title: "Duplicates", autosave: "KveikurDuplicates")
+            m.onTrash = { [weak self, weak w] urls, done in
+                guard let self, let w else { return }
+                self.main.trash(urls: urls, from: w, then: done)
+            }
+            duplicatesWindow = w
+        }
+        duplicatesWindow?.makeKeyAndOrderFront(nil)
+    }
+
+    @objc func showStatistics() {
+        if statisticsWindow == nil {
+            let m = StatisticsModel(app: model)
+            m.onShow = { [weak self] u in self?.showInBrowser(u) }
+            statisticsWindow = auxWindow(NSHostingController(rootView: StatisticsView(model: m)), title: "Listening Statistics",
+                                         autosave: "KveikurStatistics")
+        }
+        statisticsWindow?.makeKeyAndOrderFront(nil)
+    }
+
+    private func auxWindow(_ host: NSViewController, title: String, autosave: String) -> NSWindow {
+        let w = NSWindow(contentViewController: host)
+        w.title = title
+        w.styleMask = [.titled, .closable, .resizable, .miniaturizable]
+        w.appearance = NSAppearance(named: .darkAqua)
+        w.backgroundColor = Theme.inspectorBackground
+        w.isReleasedWhenClosed = false
+        if !w.setFrameUsingName(autosave) { w.center() }
+        w.setFrameAutosaveName(autosave)
+        return w
+    }
+
+    private func showInBrowser(_ url: URL) {
+        window.makeKeyAndOrderFront(nil)
+        main.show(url)
+    }
+
     @objc private func command(_ sender: NSMenuItem) {
         guard let raw = sender.representedObject as? String, let c = Command(rawValue: raw) else { return }
         window.makeKeyAndOrderFront(nil)
@@ -91,6 +134,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, NSMe
         let file = NSMenu(title: "File")
         add(file, "Add Music Folder…", .addFolder)
         add(file, "Rescan Library", .rescan)
+        add(file, "Find Duplicates…", .duplicates)
+        add(file, "Listening Statistics", .statistics)
         file.addItem(.separator())
         add(file, "New Playlist from Selection…", .newPlaylist)
         add(file, "Add to Playlist…", .addToPlaylist)

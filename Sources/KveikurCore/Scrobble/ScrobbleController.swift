@@ -6,6 +6,8 @@ import Foundation
 public final class ScrobbleController: ObservableObject {
     /// Opens the Last.fm approval page; set by the app (NSWorkspace / UIApplication).
     public var openURL: (URL) -> Void = { _ in }
+    /// A play crossed the scrobble threshold; fired even with no service connected (local history).
+    public var onListen: ((TrackMetadata, Date) -> Void)?
 
     @Published public var lastfmEnabled: Bool { didSet { defaults.set(lastfmEnabled, forKey: "lastfmEnabled") } }
     @Published public var lastfmKey: String { didSet { defaults.set(lastfmKey, forKey: "lastfmKey") } }
@@ -26,6 +28,7 @@ public final class ScrobbleController: ObservableObject {
     private var timer: Timer?
 
     private var trackURL: URL?
+    private var trackMeta: TrackMetadata?
     private var track: ScrobbleTrack?
     private var counter = ListenCounter(duration: 0)
     private var listenedBeforeMeta: TimeInterval = 0
@@ -84,6 +87,7 @@ public final class ScrobbleController: ObservableObject {
 
     private func begin(_ url: URL?) {
         trackURL = url
+        trackMeta = nil
         track = nil
         counter = ListenCounter(duration: 0)
         listenedBeforeMeta = 0
@@ -92,6 +96,7 @@ public final class ScrobbleController: ObservableObject {
         guard let url else { return }
         Task {
             guard let m = await metadata.metadata(for: url), url == trackURL else { return }
+            trackMeta = m
             track = ScrobbleTrack(m, startedAt: Date())
             counter = ListenCounter(duration: m.duration)
             if listenedBeforeMeta > 0, counter.add(listenedBeforeMeta), var t = track {
@@ -111,6 +116,7 @@ public final class ScrobbleController: ObservableObject {
     }
 
     private func submit(_ t: ScrobbleTrack) {
+        if let m = trackMeta { onListen?(m, Date(timeIntervalSince1970: TimeInterval(t.timestamp))) }
         let ids = services.map(\.id)
         guard !ids.isEmpty else { return }
         Task {

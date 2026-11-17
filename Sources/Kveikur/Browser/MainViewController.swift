@@ -463,6 +463,7 @@ final class MainViewController: NSViewController, NSTextFieldDelegate, NSSplitVi
 
         app.onFilesChanged = { [weak self] paths in self?.browser.clearCache(paths: paths) }
         app.onLibraryIndexed = { [weak self] in self?.refreshAllRows() }
+        app.$historyVersion.dropFirst().sink { [weak self] _ in DispatchQueue.main.async { self?.browser.historyChanged() } }.store(in: &bag)
 
         restorePlayer()
         browser.start()
@@ -535,6 +536,7 @@ final class MainViewController: NSViewController, NSTextFieldDelegate, NSSplitVi
         case .home: return "Library"
         case .playlists: return "Playlists"
         case .playlist(let u): return "Playlists/" + u.deletingPathExtension().lastPathComponent
+        case .smart(let k): return "Playlists/" + k.title
         case .folder(let u):
             let home = NSHomeDirectory()
             return u.path.hasPrefix(home) ? "~" + u.path.dropFirst(home.count) : u.path
@@ -661,6 +663,10 @@ final class MainViewController: NSViewController, NSTextFieldDelegate, NSSplitVi
             NSApp.sendAction(#selector(AppDelegate.showSettings), to: nil, from: nil)
         case .equalizer:
             NSApp.sendAction(#selector(AppDelegate.showEqualizer), to: nil, from: nil)
+        case .duplicates:
+            NSApp.sendAction(#selector(AppDelegate.showDuplicates), to: nil, from: nil)
+        case .statistics:
+            NSApp.sendAction(#selector(AppDelegate.showStatistics), to: nil, from: nil)
         case .toggleEQ: player.equalizer.enabled.toggle()
         case .karaoke: karaoke.toggle()
         case .cycleReplayGain:
@@ -808,6 +814,21 @@ final class MainViewController: NSViewController, NSTextFieldDelegate, NSSplitVi
     @objc private func menuCommand(_ sender: NSMenuItem) {
         guard let raw = sender.representedObject as? String, let c = Command(rawValue: raw) else { return }
         perform(c)
+    }
+
+    /// Folders open in the browser; files are revealed with the cursor on them.
+    func show(_ url: URL) {
+        var dir: ObjCBool = false
+        if FileManager.default.fileExists(atPath: url.path, isDirectory: &dir), dir.boolValue {
+            browser.navigate(to: .folder(url))
+        } else {
+            browser.reveal(url)
+        }
+    }
+
+    func trash(urls: [URL], from window: NSWindow, then done: @escaping ([URL]) -> Void) {
+        fileActions.window = view.window
+        fileActions.trash(urls: urls, from: window, then: done)
     }
 
     @objc private func fileMenu(_ sender: NSMenuItem) {

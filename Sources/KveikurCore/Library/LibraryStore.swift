@@ -16,7 +16,7 @@ extension String {
 
 /// Persistent index of tag data and music folders. Thread-safe.
 public final class LibraryStore: @unchecked Sendable {
-    private let db: SQLiteDB
+    let db: SQLiteDB
     private let lock = NSRecursiveLock()
 
     private static let columns = """
@@ -46,6 +46,7 @@ public final class LibraryStore: @unchecked Sendable {
             CREATE TABLE IF NOT EXISTS folders(path TEXT PRIMARY KEY, root TEXT NOT NULL) WITHOUT ROWID;
             CREATE INDEX IF NOT EXISTS folders_root ON folders(root);
             """)
+        try createHistory()
         dropDecomposedPaths()
     }
 
@@ -62,7 +63,7 @@ public final class LibraryStore: @unchecked Sendable {
         }
     }
 
-    private func locked<T>(_ body: () throws -> T) rethrows -> T {
+    func locked<T>(_ body: () throws -> T) rethrows -> T {
         lock.lock()
         defer { lock.unlock() }
         return try body()
@@ -173,6 +174,15 @@ public final class LibraryStore: @unchecked Sendable {
             guard let s = try? db.prepare("SELECT path FROM folders ORDER BY path") else { return [] }
             var out: [String] = []
             while s.step() { if let p = s.string(0) { out.append(p) } }
+            return out
+        }
+    }
+
+    public func allTracks() -> [TrackMetadata] {
+        locked {
+            guard let s = try? db.prepare("SELECT \(Self.columns) FROM tracks") else { return [] }
+            var out: [TrackMetadata] = []
+            while s.step() { out.append(row(s)) }
             return out
         }
     }

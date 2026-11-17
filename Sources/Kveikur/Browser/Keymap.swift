@@ -11,7 +11,7 @@ enum Command: String, CaseIterable {
     case cycleInspectorTab, prevInspectorTab, tabInfo, tabLyrics, tabQueue, tabAnalysis, tabOutput, pinNowPlaying, fetchLyrics, revealInFinder, copyPath, showQueue
     case addToPlaylist, newPlaylist, removeFromPlaylist, moveEntryDown, moveEntryUp
     case rescan, togglePreview, addFolder, settings, escape
-    case equalizer, toggleEQ, cycleReplayGain, karaoke
+    case equalizer, toggleEQ, cycleReplayGain, karaoke, duplicates, statistics
 
     var title: String {
         switch self {
@@ -83,6 +83,8 @@ enum Command: String, CaseIterable {
         case .toggleEQ: return "Equalizer on / off"
         case .cycleReplayGain: return "Cycle ReplayGain (off / track / album)"
         case .karaoke: return "Full-screen lyrics"
+        case .duplicates: return "Find duplicate albums and tracks"
+        case .statistics: return "Listening statistics"
         }
     }
 }
@@ -112,6 +114,7 @@ enum Keymap {
         ("ga", .addToPlaylist), ("gn", .newPlaylist), ("dd", .removeFromPlaylist), ("<Delete>", .removeFromPlaylist),
         ("R", .rescan), ("<D-0>", .togglePreview), ("<D-o>", .addFolder), ("<Esc>", .escape),
         ("<D-e>", .equalizer), ("E", .toggleEQ), ("gR", .cycleReplayGain), ("<D-l>", .karaoke), ("gk", .karaoke),
+        ("gD", .duplicates), ("gs", .statistics),
     ]
 
     static func keys(for c: Command) -> [String] {

@@ -6,18 +6,20 @@ enum Location: Hashable {
     case folder(URL)
     case playlists
     case playlist(URL)
+    case smart(LibraryStore.SmartList)
 
     var id: String {
         switch self {
         case .home: return "::home"
         case .folder(let u), .playlist(let u): return u.path
         case .playlists: return "::playlists"
+        case .smart(let k): return "::smart:" + k.rawValue
         }
     }
 }
 
 struct Entry: Hashable {
-    enum Kind: Hashable { case root, folder, track, playlist, playlistsRoot }
+    enum Kind: Hashable { case root, folder, track, playlist, playlistsRoot, smart(LibraryStore.SmartList) }
 
     let kind: Kind
     let url: URL?
@@ -29,6 +31,7 @@ struct Entry: Hashable {
 
     var id: String {
         if let i = playlistIndex { return "\(i):\(url?.path ?? "")" }
+        if case .smart(let k) = kind { return "::smart:" + k.rawValue }
         return url?.path ?? "::playlists"
     }
 
@@ -39,6 +42,7 @@ struct Entry: Hashable {
         case .root, .folder: return url.map { .folder($0) }
         case .playlist: return url.map { .playlist($0) }
         case .playlistsRoot: return .playlists
+        case .smart(let k): return .smart(k)
         case .track: return nil
         }
     }
@@ -121,9 +125,18 @@ final class BrowserModel {
             out.append(Entry(kind: .playlistsRoot, url: nil, name: "Playlists"))
             return out
         case .playlists:
-            return app.playlists.playlists().map {
-                Entry(kind: .playlist, url: $0, name: $0.deletingPathExtension().lastPathComponent)
-            }
+            return LibraryStore.SmartList.allCases.map { Entry(kind: .smart($0), url: nil, name: $0.title) }
+                + app.playlists.playlists().map {
+                    Entry(kind: .playlist, url: $0, name: $0.deletingPathExtension().lastPathComponent)
+                }
+        case .smart(let k):
+            let library = app.library
+            return await Task.detached {
+                library.smartList(k).enumerated().map { i, p in
+                    let u = URL(fileURLWithPath: p)
+                    return Entry(kind: .track, url: u, name: u.lastPathComponent, playlistIndex: i)
+                }
+            }.value
         case .playlist(let u):
             let store = app.playlists
             return await Task.detached {
@@ -178,8 +191,8 @@ final class BrowserModel {
         switch loc {
         case .home:
             return nil
-        case .playlists:
-            return .home
+        case .playlists, .smart:
+            return loc == .playlists ? .home : .playlists
         case .playlist(let u):
             return u.deletingLastPathComponent().standardizedFileURL == app.playlistsFolder.standardizedFileURL
                 ? .playlists : .folder(u.deletingLastPathComponent())
@@ -212,6 +225,7 @@ final class BrowserModel {
         case .playlists: return "playlists"
         case .folder(let u): return "folder:" + u.path
         case .playlist(let u): return "playlist:" + u.path
+        case .smart(let k): return "smart:" + k.rawValue
         }
     }
 
@@ -219,13 +233,14 @@ final class BrowserModel {
         if s == "home" { return .home }
         if s == "playlists" { return .playlists }
         if s.hasPrefix("folder:") { return .folder(URL(fileURLWithPath: String(s.dropFirst(7)))) }
+        if s.hasPrefix("smart:") { return LibraryStore.SmartList(rawValue: String(s.dropFirst(6))).map { .smart($0) } }
         if s.hasPrefix("playlist:") { return .playlist(URL(fileURLWithPath: String(s.dropFirst(9)))) }
         return nil
     }
 
     private static func exists(_ loc: Location) -> Bool {
         switch loc {
-        case .home, .playlists: return true
+        case .home, .playlists, .smart: return true
         case .folder(let u), .playlist(let u): return FileManager.default.fileExists(atPath: u.path)
         }
     }
@@ -548,6 +563,9 @@ final class BrowserModel {
                 if let u = e.url { out += await Task.detached { Self.recursiveTracks(u) }.value }
             case .playlist:
                 if let u = e.url { out += store.entries(u).map(\.url) }
+            case .smart(let k):
+                let library = app.library
+                out += await Task.detached { library.smartList(k) }.value.map { URL(fileURLWithPath: $0) }
             case .playlistsRoot:
                 break
             }
@@ -569,6 +587,12 @@ final class BrowserModel {
 
     /// Tracks in the current listing (playlist order or folder order).
     var currentTracks: [Entry] { entries.filter { $0.kind == .track } }
+
+    /// History changed: smart playlists are stale.
+    func historyChanged() {
+        for loc in cache.keys { if case .smart = loc { cache[loc] = nil } }
+        if case .smart = location { reload() }
+    }
 
     func clearCache(paths: [String]) {
         let set = Set(paths)

@@ -45,6 +45,7 @@ final class MobileModel: ObservableObject {
         scrobbler = ScrobbleController(player: player, metadata: metadata)
         lyricsAutoFetch = defaults.object(forKey: "lyricsAutoFetch") as? Bool ?? true
         scrobbler.openURL = { UIApplication.shared.open($0) }
+        scrobbler.onListen = { m, at in Task.detached { store.recordPlay(m, at: at) } }
         loadRoots()
         restore()
         Timer.scheduledTimer(withTimeInterval: 15, repeats: true) { [weak self] _ in
