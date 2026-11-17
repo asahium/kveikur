@@ -381,7 +381,9 @@ public final class PlaybackEngine: @unchecked Sendable {
         if exclusive, AudioHardware.setHog(device, enabled: true) { hoggedDevice = device }
         #else
         let session = AVAudioSession.sharedInstance()
-        let rateOK = !matchSampleRate || session.sampleRate == format.sampleRate
+        // The built-in speaker and most headphones stay at 48 kHz whatever is asked; once the rate has been requested,
+        // asking again only costs a full engine restart.
+        let rateOK = !matchSampleRate || session.sampleRate == format.sampleRate || session.preferredSampleRate == format.sampleRate
         if let cf = connectedFormat, Self.compatible(cf, format), rateOK, engine.isRunning { return }
 
         engine.stop()
@@ -472,8 +474,9 @@ public final class PlaybackEngine: @unchecked Sendable {
             return
         }
         snapshotFromCurrent()
-        fill()
+        fill(limit: 1)
         if autoplay { player.play() } else { scheduleIdleStop() }
+        fill()
         publishSignalPath()
         DispatchQueue.main.async { self.delegate?.engine(self, didStart: url) }
     }
@@ -498,8 +501,9 @@ public final class PlaybackEngine: @unchecked Sendable {
             return
         }
         snapshotFromCurrent()
-        fill()
+        fill(limit: 1)
         if wantsPlaying { player.play() } else { scheduleIdleStop() }
+        fill()
     }
 
     private func updateNext(_ url: URL?) {
@@ -523,8 +527,9 @@ public final class PlaybackEngine: @unchecked Sendable {
         }
     }
 
-    private func fill() {
-        while inFlight < Self.buffersInFlight, !feedingDone, let slot = feeding {
+    /// Decodes until `limit` buffers are queued; starting playback after the first one keeps play and seek instant.
+    private func fill(limit: Int = PlaybackEngine.buffersInFlight) {
+        while inFlight < limit, !feedingDone, let slot = feeding {
             let format = slot.decoder.processingFormat
             guard let buffer = AVAudioPCMBuffer(pcmFormat: format,
                                                 frameCapacity: AVAudioFrameCount(format.sampleRate * Self.bufferSeconds)) else { return }
