@@ -1,4 +1,5 @@
 import AppKit
+import KveikurCore
 import SwiftUI
 
 @MainActor
@@ -213,6 +214,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, NSMe
         add(playback, "Equalizer…", .equalizer)
         add(playback, "Equalizer On / Off", .toggleEQ)
         add(playback, "Cycle ReplayGain", .cycleReplayGain)
+        playback.addItem(.separator())
+        let sleep = NSMenu(title: "Sleep Timer")
+        sleep.delegate = self
+        playback.addItem(submenu(sleep, title: "Sleep Timer"))
         bar.addItem(commandMenu(playback))
 
         let viewMenu = NSMenu(title: "View")
@@ -251,6 +256,34 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, NSMe
 
     /// Menus of app commands: shortcuts are shown but never matched by the menu, since the key router owns those keys
     /// (most are bare letters that must keep working as text in search fields).
+    func menuNeedsUpdate(_ menu: NSMenu) {
+        guard menu.title == "Sleep Timer" else { return }
+        let player = model.player
+        menu.removeAllItems()
+        func item(_ title: String, _ tag: Int, on: Bool) {
+            let i = menu.addItem(withTitle: title, action: #selector(sleepTimer(_:)), keyEquivalent: "")
+            i.target = self
+            i.tag = tag
+            i.state = on ? .on : .off
+        }
+        item("Off", 0, on: player.sleep == .off)
+        if let left = player.sleepRemaining {
+            item("\(Int((left / 60).rounded(.up))) min left", -2, on: true)
+        }
+        menu.addItem(.separator())
+        for m in PlayerController.sleepChoices { item("\(m) min", m, on: false) }
+        item("End of Track", -1, on: player.sleep == .endOfTrack)
+    }
+
+    @objc private func sleepTimer(_ sender: NSMenuItem) {
+        switch sender.tag {
+        case 0: model.player.setSleep(minutes: nil)
+        case -1: model.player.setSleepEndOfTrack()
+        case -2: break
+        default: model.player.setSleep(minutes: sender.tag)
+        }
+    }
+
     private func commandMenu(_ menu: NSMenu) -> NSMenuItem {
         menu.delegate = self
         return submenu(menu, title: menu.title)

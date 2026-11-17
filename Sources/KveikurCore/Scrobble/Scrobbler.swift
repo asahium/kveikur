@@ -140,6 +140,29 @@ public struct LastFMService: ScrobbleService {
         return (name, key)
     }
 
+    /// One page (newest first) of the user's scrobbles after `from`; skips the "now playing" entry.
+    public static func recentTracks(user: String, apiKey: String, secret: String, from: Int, page: Int)
+        async throws -> (plays: [ImportedPlay], pages: Int) {
+        let r = try await call("user.getRecentTracks", ["user": user, "from": String(from), "page": String(page), "limit": "200"],
+                               apiKey: apiKey, secret: secret, post: false)
+        return parseRecent(r)
+    }
+
+    static func parseRecent(_ r: [String: Any]) -> (plays: [ImportedPlay], pages: Int) {
+        guard let rt = r["recenttracks"] as? [String: Any] else { return ([], 0) }
+        let attr = rt["@attr"] as? [String: Any]
+        let pages = Int(attr?["totalPages"] as? String ?? "") ?? 0
+        let raw: [[String: Any]] = (rt["track"] as? [[String: Any]]) ?? ((rt["track"] as? [String: Any]).map { [$0] } ?? [])
+        let plays = raw.compactMap { t -> ImportedPlay? in
+            guard let date = t["date"] as? [String: Any], let uts = Int(date["uts"] as? String ?? ""),
+                  let title = t["name"] as? String,
+                  let artist = (t["artist"] as? [String: Any])?["#text"] as? String else { return nil }
+            let album = ((t["album"] as? [String: Any])?["#text"] as? String).flatMap { $0.isEmpty ? nil : $0 }
+            return ImportedPlay(artist: artist, title: title, album: album, at: Date(timeIntervalSince1970: TimeInterval(uts)))
+        }
+        return (plays, pages)
+    }
+
     static func fields(_ t: ScrobbleTrack, suffix: String = "") -> [String: String] {
         var p = ["artist\(suffix)": t.artist, "track\(suffix)": t.title]
         if let a = t.album { p["album\(suffix)"] = a }

@@ -3,6 +3,10 @@
 IOS_SIM ?= iPhone 17 Pro
 # Team of the first "Apple Development" certificate (Xcode → Settings → Accounts creates one, a free Apple ID works).
 TEAM ?= $(shell security find-certificate -c "Apple Development" -p 2>/dev/null | openssl x509 -noout -subject 2>/dev/null | sed -n 's/.*OU *= *\([A-Z0-9]*\).*/\1/p')
+# The phone build takes over the Mac's Last.fm session (read at build time, never committed).
+PREF = defaults read dev.kveikur.player
+LASTFM_FROM_MAC = KVEIKUR_LASTFM_KEY="$$($(PREF) lastfmKey 2>/dev/null)" KVEIKUR_LASTFM_SECRET="$$($(PREF) lastfmSecret 2>/dev/null)" \
+	KVEIKUR_LASTFM_SESSION="$$($(PREF) lastfmSession 2>/dev/null)" KVEIKUR_LASTFM_USER="$$($(PREF) lastfmUser 2>/dev/null)"
 DEVICE ?= $(shell xcrun devicectl list devices 2>/dev/null | awk '/physical/ && /(available|connected)/ {for (i=1;i<=NF;i++) if ($$i ~ /^[0-9A-F]{8}-/) {print $$i; exit}}')
 
 build:
@@ -39,7 +43,7 @@ ios-sim:
 ios-device:
 	@test -n "$(TEAM)" || (echo "No Apple Development certificate: add an Apple ID in Xcode → Settings → Accounts" && exit 1)
 	@test -n "$(DEVICE)" || (echo "No paired iPhone found (connect it, unlock, trust this Mac)" && exit 1)
-	cd iOS && xcodegen generate && xcodebuild -project KveikurMobile.xcodeproj -scheme KveikurMobile \
+	cd iOS && xcodegen generate && $(LASTFM_FROM_MAC) xcodebuild -project KveikurMobile.xcodeproj -scheme KveikurMobile \
 		-destination 'generic/platform=iOS' -derivedDataPath ../.build/ios-device -allowProvisioningUpdates \
 		DEVELOPMENT_TEAM=$(TEAM) build
 	xcrun devicectl device install app --device $(DEVICE) .build/ios-device/Build/Products/Debug-iphoneos/Kveikur.app

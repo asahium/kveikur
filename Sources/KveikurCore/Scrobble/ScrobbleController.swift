@@ -8,6 +8,10 @@ public final class ScrobbleController: ObservableObject {
     public var openURL: (URL) -> Void = { _ in }
     /// A play crossed the scrobble threshold; fired even with no service connected (local history).
     public var onListen: ((TrackMetadata, Date) -> Void)?
+    /// Stores plays pulled from Last.fm (scrobbles from other devices and the past); returns how many were new.
+    public var onImport: (([ImportedPlay]) async -> Int)?
+    @Published public private(set) var importing = false
+    private var importTimer: Timer?
 
     @Published public var lastfmEnabled: Bool { didSet { defaults.set(lastfmEnabled, forKey: "lastfmEnabled") } }
     @Published public var lastfmKey: String { didSet { defaults.set(lastfmKey, forKey: "lastfmKey") } }
@@ -53,9 +57,56 @@ public final class ScrobbleController: ObservableObject {
         }
         timer?.tolerance = 0.3
         flush()
+        importTimer = Timer.scheduledTimer(withTimeInterval: 1800, repeats: true) { [weak self] _ in
+            MainActor.assumeIsolated { self?.importHistory() }
+        }
+        importTimer?.tolerance = 120
+        DispatchQueue.main.asyncAfter(deadline: .now() + 5) { [weak self] in self?.importHistory() }
     }
 
     public var lastfmConnected: Bool { !lastfmSession.isEmpty }
+
+    /// Fills local history with scrobbles made elsewhere (phone, other players) since the last import.
+    /// The first run pulls the whole Last.fm history, 200 plays per request.
+    public func importHistory() {
+        guard lastfmEnabled, lastfmConnected, !lastfmUser.isEmpty, let store = onImport, !importing else { return }
+        importing = true
+        let user = lastfmUser, key = lastfmKey, secret = lastfmSecret
+        let since = defaults.integer(forKey: "lastfmImportedUntil")
+        Task {
+            defer { importing = false }
+            var newest = since
+            var added = 0
+            var page = 1
+            do {
+                while true {
+                    let r = try await LastFMService.recentTracks(user: user, apiKey: key, secret: secret, from: since + 1, page: page)
+                    newest = max(newest, r.plays.map { Int($0.at.timeIntervalSince1970) }.max() ?? 0)
+                    added += await store(r.plays)
+                    if since == 0, r.pages > 1 { status = "Importing Last.fm history… \(page)/\(r.pages)" }
+                    guard page < r.pages else { break }
+                    page += 1
+                    try await Task.sleep(nanoseconds: 300_000_000)
+                }
+                defaults.set(newest, forKey: "lastfmImportedUntil")
+                if added > 0 || since == 0 { status = "Imported \(added) plays from Last.fm" }
+            } catch {
+                status = "Last.fm history: \(error.localizedDescription)"
+            }
+        }
+    }
+
+    /// Takes over a session created on another device (the Mac build passes its own when installing the iPhone app).
+    public func adoptLastFM(key: String, secret: String, session: String, user: String) {
+        guard !lastfmConnected, !key.isEmpty, !secret.isEmpty, !session.isEmpty, !user.isEmpty else { return }
+        lastfmKey = key
+        lastfmSecret = secret
+        lastfmSession = session
+        lastfmUser = user
+        lastfmEnabled = true
+        status = "Connected to Last.fm as \(user)"
+        flush()
+    }
 
     private var services: [any ScrobbleService] {
         var s: [any ScrobbleService] = []
@@ -160,6 +211,7 @@ public final class ScrobbleController: ObservableObject {
                         lastfmEnabled = true
                         status = "Connected to Last.fm as \(name)"
                         flush()
+                        importHistory()
                         return
                     }
                 }
@@ -171,6 +223,7 @@ public final class ScrobbleController: ObservableObject {
     }
 
     public func disconnectLastFM() {
+        defaults.removeObject(forKey: "lastfmImportedUntil")
         lastfmSession = ""
         lastfmUser = ""
         lastfmEnabled = false

@@ -61,6 +61,11 @@ final class AppModel: ObservableObject {
             store.recordPlay(m, at: at)
             self?.historyVersion += 1
         }
+        scrobbler.onImport = { [weak self] plays in
+            let n = await Task.detached { store.importPlays(plays) }.value
+            if n > 0 { self?.historyVersion += 1 }
+            return n
+        }
 
         scanner.onProgress = { [weak self] p in
             self?.scanStatus = p.running ? "Indexing \(p.processed)/\(p.total)" : ""

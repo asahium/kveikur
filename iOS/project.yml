@@ -45,3 +45,7 @@ targets:
         LSSupportsOpeningDocumentsInPlace: true
         UIUserInterfaceStyle: Dark
         ITSAppUsesNonExemptEncryption: false
+        KveikurLastFMKey: $(KVEIKUR_LASTFM_KEY)
+        KveikurLastFMSecret: $(KVEIKUR_LASTFM_SECRET)
+        KveikurLastFMSession: $(KVEIKUR_LASTFM_SESSION)
+        KveikurLastFMUser: $(KVEIKUR_LASTFM_USER)

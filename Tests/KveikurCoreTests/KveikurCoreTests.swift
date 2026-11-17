@@ -858,3 +858,43 @@ final class ReleaseCheckTests: XCTestCase {
         XCTAssertEqual(r.notes, "Notes")
     }
 }
+
+final class HistoryImportTests: XCTestCase {
+    func testParsesRecentTracksAndSkipsNowPlaying() {
+        let json: [String: Any] = ["recenttracks": [
+            "@attr": ["totalPages": "3"],
+            "track": [
+                ["name": "Live", "artist": ["#text": "A"], "@attr": ["nowplaying": "true"]],
+                ["name": "Hoppípolla", "artist": ["#text": "Sigur Rós"], "album": ["#text": "Takk..."], "date": ["uts": "1700000000"]],
+                ["name": "Untitled", "artist": ["#text": "B"], "album": ["#text": ""], "date": ["uts": "1700000300"]],
+            ],
+        ]]
+        let r = LastFMService.parseRecent(json)
+        XCTAssertEqual(r.pages, 3)
+        XCTAssertEqual(r.plays.map(\.title), ["Hoppípolla", "Untitled"])
+        XCTAssertEqual(r.plays[0].album, "Takk...")
+        XCTAssertNil(r.plays[1].album)
+    }
+
+    func testImportMatchesLibraryAndSkipsKnownPlays() throws {
+        let store = try LibraryStore(url: FileManager.default.temporaryDirectory.appendingPathComponent("\(UUID()).sqlite"))
+        var t = TrackMetadata(path: "/M/hoppipolla.flac", mtime: 1, size: 1)
+        t.artist = "Sigur Rós"; t.title = "Hoppípolla"; t.duration = 268
+        store.upsert([t])
+        let at = Date(timeIntervalSince1970: 1_700_000_000)
+        store.recordPlay(t, at: at)
+
+        let plays = [
+            ImportedPlay(artist: "Sigur Rós", title: "Hoppípolla", album: nil, at: at.addingTimeInterval(20)),
+            ImportedPlay(artist: "sigur ros", title: "hoppipolla", album: nil, at: at.addingTimeInterval(3600)),
+            ImportedPlay(artist: "Other", title: "Song", album: "X", at: at.addingTimeInterval(7200)),
+        ]
+        XCTAssertEqual(store.importPlays(plays), 2)
+        XCTAssertEqual(store.importPlays(plays), 0)
+        let s = store.stats(since: nil)
+        XCTAssertEqual(s.plays, 3)
+        XCTAssertEqual(s.seconds, 268 * 2)
+        XCTAssertEqual(store.playCount(t.path).plays, 2)
+        XCTAssertEqual(store.smartList(.mostPlayed), [t.path])
+    }
+}

@@ -172,6 +172,7 @@ private struct PlayingTab: View {
                     Text("EQ").font(.footnote.weight(.bold))
                         .foregroundStyle(player.equalizer.enabled ? Nord.accent : Nord.secondary)
                 }
+                SleepMenu()
                 RoutePicker().frame(width: 28, height: 28)
             }
             .font(.title3)
@@ -184,6 +185,28 @@ private struct PlayingTab: View {
         case .off: return .all
         case .all: return .one
         case .one: return .off
+        }
+    }
+}
+
+private struct SleepMenu: View {
+    @EnvironmentObject var player: PlayerController
+
+    var body: some View {
+        Menu {
+            Button("Off") { player.setSleep(minutes: nil) }
+            ForEach(PlayerController.sleepChoices, id: \.self) { m in
+                Button("\(m) min") { player.setSleep(minutes: m) }
+            }
+            Button("End of Track") { player.setSleepEndOfTrack() }
+        } label: {
+            HStack(spacing: 3) {
+                Image(systemName: player.sleep == .off ? "moon" : "moon.fill")
+                if case .at(let d) = player.sleep {
+                    Text(d, style: .timer).font(.caption2.monospacedDigit())
+                }
+            }
+            .foregroundStyle(player.sleep == .off ? Nord.secondary : Nord.accent)
         }
     }
 }

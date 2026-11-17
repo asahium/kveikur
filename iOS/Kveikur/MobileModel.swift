@@ -47,6 +47,10 @@ final class MobileModel: ObservableObject {
         lyricsAutoFetch = defaults.object(forKey: "lyricsAutoFetch") as? Bool ?? true
         scrobbler.openURL = { UIApplication.shared.open($0) }
         scrobbler.onListen = { m, at in Task.detached { store.recordPlay(m, at: at) } }
+        scrobbler.onImport = { plays in await Task.detached { store.importPlays(plays) }.value }
+        let info = Bundle.main.infoDictionary ?? [:]
+        scrobbler.adoptLastFM(key: info["KveikurLastFMKey"] as? String ?? "", secret: info["KveikurLastFMSecret"] as? String ?? "",
+                              session: info["KveikurLastFMSession"] as? String ?? "", user: info["KveikurLastFMUser"] as? String ?? "")
         loadRoots()
         restore()
         let saver = Timer.scheduledTimer(withTimeInterval: 15, repeats: true) { [weak self] _ in

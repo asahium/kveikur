@@ -62,8 +62,9 @@ extension LibraryStore {
                 WHERE at >= ? AND album IS NOT NULL GROUP BY 1 ORDER BY 4 DESC, 5 DESC LIMIT ?
                 """, from, limit)
             s.topTracks = items("""
-                SELECT path, MAX(title), MAX(artist), COUNT(*), TOTAL(duration) FROM plays
-                WHERE at >= ? GROUP BY path ORDER BY 4 DESC, MAX(at) DESC LIMIT ?
+                SELECT MAX(path), MAX(title), MAX(artist), COUNT(*), TOTAL(duration) FROM plays
+                WHERE at >= ? GROUP BY lower(IFNULL(artist, '')) || '|' || lower(IFNULL(title, path))
+                ORDER BY 4 DESC, MAX(at) DESC LIMIT ?
                 """, from, limit)
             s.days = days(since: since)
             return s
@@ -120,9 +121,9 @@ extension LibraryStore {
         let sql: String
         switch kind {
         case .mostPlayed:
-            sql = "SELECT path FROM plays GROUP BY path ORDER BY COUNT(*) DESC, MAX(at) DESC LIMIT ?"
+            sql = "SELECT path FROM plays WHERE path IN (SELECT path FROM tracks) GROUP BY path ORDER BY COUNT(*) DESC, MAX(at) DESC LIMIT ?"
         case .recentlyPlayed:
-            sql = "SELECT path FROM plays GROUP BY path ORDER BY MAX(at) DESC LIMIT ?"
+            sql = "SELECT path FROM plays WHERE path IN (SELECT path FROM tracks) GROUP BY path ORDER BY MAX(at) DESC LIMIT ?"
         case .recentlyAdded:
             sql = "SELECT path FROM tracks ORDER BY mtime DESC, path LIMIT ?"
         case .neverPlayed:
@@ -142,6 +143,56 @@ extension LibraryStore {
             guard let q = try? db.prepare("SELECT COUNT(*), MAX(at) FROM plays WHERE path = ?"), q.bind([path.pathKey]).step() else { return (0, nil) }
             let n = q.int(0) ?? 0
             return (n, n > 0 ? Date(timeIntervalSince1970: q.double(1)) : nil)
+        }
+    }
+}
+
+/// A play from another device or app, as reported by Last.fm.
+public struct ImportedPlay: Sendable, Equatable {
+    public var artist: String
+    public var title: String
+    public var album: String?
+    public var at: Date
+
+    public init(artist: String, title: String, album: String?, at: Date) {
+        self.artist = artist
+        self.title = title
+        self.album = album
+        self.at = at
+    }
+}
+
+extension LibraryStore {
+    /// Adds plays not already recorded (same title within 90 s), matched to library files by artist and title
+    /// so they count for smart playlists and listening time. Returns how many were added.
+    @discardableResult
+    public func importPlays(_ plays: [ImportedPlay]) -> Int {
+        guard !plays.isEmpty else { return 0 }
+        func key(_ a: String?, _ t: String?) -> String {
+            (a ?? "").folding(options: [.caseInsensitive, .diacriticInsensitive], locale: nil) + "|"
+                + (t ?? "").folding(options: [.caseInsensitive, .diacriticInsensitive], locale: nil)
+        }
+        return locked {
+            var library: [String: (String, Double)] = [:]
+            if let q = try? db.prepare("SELECT path, artist, title, duration FROM tracks WHERE title IS NOT NULL") {
+                while q.step() {
+                    if let p = q.string(0) { library[key(q.string(1), q.string(2))] = library[key(q.string(1), q.string(2))] ?? (p, q.double(3)) }
+                }
+            }
+            guard let exists = try? db.prepare("SELECT 1 FROM plays WHERE at BETWEEN ? AND ? AND lower(title) = lower(?) LIMIT 1"),
+                  let insert = try? db.prepare("INSERT INTO plays(path, at, artist, title, album, duration) VALUES(?, ?, ?, ?, ?, ?)")
+            else { return 0 }
+            var added = 0
+            try? db.transaction {
+                for p in plays {
+                    let t = p.at.timeIntervalSince1970
+                    if exists.bind([t - 90, t + 90, p.title]).step() { continue }
+                    let match = library[key(p.artist, p.title)]
+                    insert.bind([match?.0 ?? "lastfm:\(p.artist) — \(p.title)", t, p.artist, p.title, p.album, match?.1 ?? 0]).run()
+                    added += 1
+                }
+            }
+            return added
         }
     }
 }

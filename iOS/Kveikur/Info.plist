@@ -22,6 +22,14 @@
 	<string>$(CURRENT_PROJECT_VERSION)</string>
 	<key>ITSAppUsesNonExemptEncryption</key>
 	<false/>
+	<key>KveikurLastFMKey</key>
+	<string>$(KVEIKUR_LASTFM_KEY)</string>
+	<key>KveikurLastFMSecret</key>
+	<string>$(KVEIKUR_LASTFM_SECRET)</string>
+	<key>KveikurLastFMSession</key>
+	<string>$(KVEIKUR_LASTFM_SESSION)</string>
+	<key>KveikurLastFMUser</key>
+	<string>$(KVEIKUR_LASTFM_USER)</string>
 	<key>LSSupportsOpeningDocumentsInPlace</key>
 	<true/>
 	<key>UIApplicationSceneManifest</key>

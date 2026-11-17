@@ -26,6 +26,7 @@ struct RootView: View {
     @EnvironmentObject var player: PlayerController
     @State private var showPlayer = false
     @State private var showSettings = false
+    @State private var showStats = false
     @State private var picking = false
     @State private var path: [URL] = []
     @State private var playerTab: NowPlayingView.Tab = .playing
@@ -67,6 +68,9 @@ struct RootView: View {
             .navigationTitle("Library")
             .navigationDestination(for: URL.self) { FolderView(folder: $0) }
             .toolbar {
+                ToolbarItem(placement: .topBarLeading) {
+                    Button { showStats = true } label: { Image(systemName: "chart.bar") }
+                }
                 ToolbarItem(placement: .topBarTrailing) {
                     Button { showSettings = true } label: { Image(systemName: "gearshape") }
                 }
@@ -80,6 +84,9 @@ struct RootView: View {
                 .environmentObject(model)
                 .environmentObject(player)
                 .presentationDragIndicator(.visible)
+        }
+        .sheet(isPresented: $showStats) {
+            StatsView(scrobbler: model.scrobbler).environmentObject(model)
         }
         .sheet(isPresented: $showSettings) {
             SettingsView()

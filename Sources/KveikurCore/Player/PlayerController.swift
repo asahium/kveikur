@@ -87,6 +87,8 @@ public final class PlayerController: ObservableObject, PlaybackEngineDelegate {
     private var order: [Int] = []
     private var orderPos = 0
     private var ticker: Timer?
+    @Published public private(set) var sleep: SleepTimer = .off
+    private var sleepTimer: Timer?
     /// Nothing on screen reads `clock` (iOS app in the background): skip the 10 Hz ticks while playing.
     public var clockSuspended = false {
         didSet {
@@ -505,6 +507,11 @@ public final class PlayerController: ObservableObject, PlaybackEngineDelegate {
                 } else if let i = queue.firstIndex(of: url) {
                     move(toAudible: i)
                 }
+                if sleep == .endOfTrack {
+                    sleep = .off
+                    if isPlaying { playPause() }
+                    seek(to: 0)
+                }
             }
             updateNext()
             updateNowPlaying()
@@ -608,5 +615,60 @@ public final class PlayerController: ObservableObject, PlaybackEngineDelegate {
         }
         center.nowPlayingInfo = info
         center.playbackState = isPlaying ? .playing : .paused
+    }
+}
+
+// MARK: Sleep timer
+
+public enum SleepTimer: Equatable, Sendable {
+    case off
+    case at(Date)
+    case endOfTrack
+}
+
+extension PlayerController {
+    public static let sleepChoices = [15, 30, 45, 60, 90]
+
+    /// nil turns the timer off. At the deadline the volume fades out over a few seconds, then playback pauses.
+    public func setSleep(minutes: Int?) {
+        sleepTimer?.invalidate()
+        sleepTimer = nil
+        guard let minutes else { sleep = .off; return }
+        let at = Date().addingTimeInterval(TimeInterval(minutes * 60))
+        sleep = .at(at)
+        let t = Timer(fire: at, interval: 0, repeats: false) { [weak self] _ in
+            MainActor.assumeIsolated { self?.fadeOutAndPause() }
+        }
+        t.tolerance = 2
+        RunLoop.main.add(t, forMode: .common)
+        sleepTimer = t
+    }
+
+    public func setSleepEndOfTrack() {
+        sleepTimer?.invalidate()
+        sleepTimer = nil
+        sleep = .endOfTrack
+    }
+
+    public var sleepRemaining: TimeInterval? {
+        if case .at(let d) = sleep { return max(0, d.timeIntervalSinceNow) }
+        return nil
+    }
+
+    private func fadeOutAndPause() {
+        sleepTimer = nil
+        sleep = .off
+        guard isPlaying else { return }
+        let target = volume
+        let steps = 24
+        Task { @MainActor in
+            for i in 1...steps {
+                engine.setVolume(target * Float(steps - i) / Float(steps))
+                try? await Task.sleep(nanoseconds: 250_000_000)
+                if !isPlaying { break }
+            }
+            if isPlaying { playPause() }
+            engine.setVolume(volume)
+        }
     }
 }
