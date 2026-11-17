@@ -1,5 +1,7 @@
-import CoreServices
 import Foundation
+#if os(macOS)
+import CoreServices
+#endif
 
 public struct ScanProgress: Sendable {
     public var running: Bool
@@ -87,6 +89,7 @@ public final class LibraryScanner: @unchecked Sendable {
     }
 }
 
+#if os(macOS)
 /// FSEvents on library roots, debounced; reports the changed directories.
 public final class FolderWatcher {
     private var stream: FSEventStreamRef?
@@ -142,3 +145,11 @@ public final class FolderWatcher {
         DispatchQueue.main.asyncAfter(deadline: .now() + 1.5, execute: work)
     }
 }
+#else
+/// iOS has no FSEvents; folders are rescanned on demand instead.
+public final class FolderWatcher {
+    public init(handler: @escaping ([String]) -> Void) {}
+    public func watch(_ paths: [String]) {}
+    public func stop() {}
+}
+#endif

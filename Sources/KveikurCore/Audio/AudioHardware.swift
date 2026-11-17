@@ -1,8 +1,13 @@
-import CoreAudio
 import Foundation
+#if os(macOS)
+import CoreAudio
+#endif
+
+/// Core Audio device id on macOS; unused on iOS, where the audio session picks the route.
+public typealias OutputDeviceID = UInt32
 
 public struct OutputDevice: Identifiable, Hashable, Sendable {
-    public var id: AudioDeviceID
+    public var id: OutputDeviceID
     public var uid: String
     public var name: String
 }
@@ -18,6 +23,7 @@ public struct DeviceDetails: Equatable, Sendable {
     public var hasHardwareVolume = false
 }
 
+#if os(macOS)
 /// Thin wrappers over the CoreAudio HAL.
 public enum AudioHardware {
     private static func address(_ selector: AudioObjectPropertySelector,
@@ -187,3 +193,4 @@ public enum AudioHardware {
         }
     }
 }
+#endif

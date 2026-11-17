@@ -1,5 +1,11 @@
-import AppKit
 import AVFAudio
+#if os(macOS)
+import AppKit
+public typealias PlatformImage = NSImage
+#else
+import UIKit
+public typealias PlatformImage = UIImage
+#endif
 import Combine
 import Foundation
 import MediaPlayer
@@ -67,7 +73,7 @@ public final class PlayerController: ObservableObject, PlaybackEngineDelegate {
     @Published public var customPresets: [EQPreset] {
         didSet { Self.store(customPresets, "eqPresets") }
     }
-    @Published public private(set) var artwork: NSImage?
+    @Published public private(set) var artwork: PlatformImage?
     @Published public private(set) var deviceDetails = DeviceDetails()
 
     public let clock = PlaybackClock()
@@ -83,6 +89,7 @@ public final class PlayerController: ObservableObject, PlaybackEngineDelegate {
     private var ticker: Timer?
     private var preferredDeviceUID: String?
     private var startedURL: URL?
+    private var interrupted = false
 
     public init(metadata: MetadataStore) {
         self.metadata = metadata
@@ -100,10 +107,14 @@ public final class PlayerController: ObservableObject, PlaybackEngineDelegate {
         engine.setVolume(volume)
         engine.setMatchSampleRate(matchSampleRate)
         engine.setExclusive(exclusiveMode)
+        #if os(macOS)
         refreshDevices()
         AudioHardware.observeDevices { [weak self] in
             MainActor.assumeIsolated { self?.refreshDevices() }
         }
+        #else
+        setupAudioSession()
+        #endif
         setupRemoteCommands()
     }
 
@@ -343,7 +354,11 @@ public final class PlayerController: ObservableObject, PlaybackEngineDelegate {
             updateNowPlaying()
             let img = await ArtworkCache.shared.image(forTrack: url)
             guard url == currentURL else { return }
+            #if os(macOS)
             artwork = img.map { NSImage(cgImage: $0, size: NSSize(width: $0.width, height: $0.height)) }
+            #else
+            artwork = img.map { UIImage(cgImage: $0) }
+            #endif
             updateNowPlaying()
         }
     }
@@ -356,6 +371,7 @@ public final class PlayerController: ObservableObject, PlaybackEngineDelegate {
         refreshDevices(force: true)
     }
 
+    #if os(macOS)
     private func refreshDevices(force: Bool = false) {
         devices = AudioHardware.outputDevices()
         let target = preferredDeviceUID.flatMap { uid in devices.contains { $0.uid == uid } ? uid : nil }
@@ -370,6 +386,62 @@ public final class PlayerController: ObservableObject, PlaybackEngineDelegate {
         let d = AudioHardware.details(id)
         if d != deviceDetails { deviceDetails = d }
     }
+    #else
+    private func refreshDevices(force: Bool = false) {}
+
+    private func refreshDeviceDetails() {
+        let s = AVAudioSession.sharedInstance()
+        var d = DeviceDetails()
+        let out = s.currentRoute.outputs.first
+        d.name = out?.portName ?? "iPhone"
+        d.transport = out.map { Self.portLabel($0.portType) } ?? ""
+        d.channels = s.outputNumberOfChannels
+        d.sampleRate = s.sampleRate
+        if d != deviceDetails { deviceDetails = d }
+    }
+
+    private static func portLabel(_ p: AVAudioSession.Port) -> String {
+        switch p {
+        case .builtInSpeaker: return "Speaker"
+        case .headphones: return "Wired"
+        case .bluetoothA2DP, .bluetoothLE, .bluetoothHFP: return "Bluetooth"
+        case .airPlay: return "AirPlay"
+        case .usbAudio: return "USB"
+        case .carAudio: return "CarPlay"
+        default: return p.rawValue
+        }
+    }
+
+    /// Playback category for background audio; pauses on interruptions and when headphones are unplugged.
+    private func setupAudioSession() {
+        let s = AVAudioSession.sharedInstance()
+        try? s.setCategory(.playback, mode: .default, policy: .longFormAudio)
+        let nc = NotificationCenter.default
+        nc.addObserver(forName: AVAudioSession.interruptionNotification, object: s, queue: .main) { [weak self] n in
+            let type = (n.userInfo?[AVAudioSessionInterruptionTypeKey] as? UInt).flatMap(AVAudioSession.InterruptionType.init)
+            let resume = ((n.userInfo?[AVAudioSessionInterruptionOptionKey] as? UInt) ?? 0) & AVAudioSession.InterruptionOptions.shouldResume.rawValue != 0
+            MainActor.assumeIsolated {
+                guard let self else { return }
+                if type == .began, self.isPlaying {
+                    self.playPause()
+                    self.interrupted = true
+                } else if type == .ended, self.interrupted {
+                    self.interrupted = false
+                    if resume, !self.isPlaying { self.playPause() }
+                }
+            }
+        }
+        nc.addObserver(forName: AVAudioSession.routeChangeNotification, object: s, queue: .main) { [weak self] n in
+            let reason = (n.userInfo?[AVAudioSessionRouteChangeReasonKey] as? UInt).flatMap(AVAudioSession.RouteChangeReason.init)
+            MainActor.assumeIsolated {
+                guard let self else { return }
+                if reason == .oldDeviceUnavailable, self.isPlaying { self.playPause() }
+                self.refreshDeviceDetails()
+            }
+        }
+        refreshDeviceDetails()
+    }
+    #endif
 
     // MARK: Engine delegate
 

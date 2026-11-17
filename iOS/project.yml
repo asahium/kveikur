@@ -1,0 +1,47 @@
+name: KveikurMobile
+options:
+  bundleIdPrefix: dev.kveikur
+  deploymentTarget:
+    iOS: "18.0"
+  createIntermediateGroups: true
+packages:
+  KveikurPackage:
+    path: ..
+targets:
+  KveikurMobile:
+    type: application
+    platform: iOS
+    sources:
+      - path: Kveikur
+    dependencies:
+      - package: KveikurPackage
+        product: KveikurCore
+    settings:
+      base:
+        PRODUCT_NAME: Kveikur
+        PRODUCT_BUNDLE_IDENTIFIER: dev.kveikur.mobile
+        MARKETING_VERSION: 0.1.0
+        CURRENT_PROJECT_VERSION: 1
+        SWIFT_VERSION: "5.0"
+        TARGETED_DEVICE_FAMILY: "1"
+        ASSETCATALOG_COMPILER_APPICON_NAME: AppIcon
+        ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME: AccentColor
+        CODE_SIGN_STYLE: Automatic
+        ENABLE_PREVIEWS: YES
+    info:
+      path: Kveikur/Info.plist
+      properties:
+        CFBundleDisplayName: Kveikur
+        CFBundleShortVersionString: $(MARKETING_VERSION)
+        CFBundleVersion: $(CURRENT_PROJECT_VERSION)
+        UILaunchScreen: {}
+        UIApplicationSceneManifest:
+          UIApplicationSupportsMultipleScenes: false
+        UISupportedInterfaceOrientations:
+          - UIInterfaceOrientationPortrait
+        UIBackgroundModes:
+          - audio
+        UIFileSharingEnabled: true
+        LSSupportsOpeningDocumentsInPlace: true
+        UIUserInterfaceStyle: Dark
+        ITSAppUsesNonExemptEncryption: false

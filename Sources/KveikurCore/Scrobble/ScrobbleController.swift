@@ -1,20 +1,22 @@
-import AppKit
 import Combine
-import KveikurCore
+import Foundation
 
 /// Watches playback once a second, counts real listening time and submits plays to Last.fm / ListenBrainz.
 @MainActor
-final class ScrobbleController: ObservableObject {
-    @Published var lastfmEnabled: Bool { didSet { defaults.set(lastfmEnabled, forKey: "lastfmEnabled") } }
-    @Published var lastfmKey: String { didSet { defaults.set(lastfmKey, forKey: "lastfmKey") } }
-    @Published var lastfmSecret: String { didSet { defaults.set(lastfmSecret, forKey: "lastfmSecret") } }
-    @Published private(set) var lastfmUser: String { didSet { defaults.set(lastfmUser, forKey: "lastfmUser") } }
-    @Published private(set) var lastfmConnecting = false
-    @Published var listenbrainzEnabled: Bool { didSet { defaults.set(listenbrainzEnabled, forKey: "listenbrainzEnabled") } }
-    @Published var listenbrainzToken: String { didSet { defaults.set(listenbrainzToken, forKey: "listenbrainzToken") } }
-    @Published private(set) var listenbrainzUser: String { didSet { defaults.set(listenbrainzUser, forKey: "listenbrainzUser") } }
-    @Published private(set) var status = ""
-    @Published private(set) var pending = 0
+public final class ScrobbleController: ObservableObject {
+    /// Opens the Last.fm approval page; set by the app (NSWorkspace / UIApplication).
+    public var openURL: (URL) -> Void = { _ in }
+
+    @Published public var lastfmEnabled: Bool { didSet { defaults.set(lastfmEnabled, forKey: "lastfmEnabled") } }
+    @Published public var lastfmKey: String { didSet { defaults.set(lastfmKey, forKey: "lastfmKey") } }
+    @Published public var lastfmSecret: String { didSet { defaults.set(lastfmSecret, forKey: "lastfmSecret") } }
+    @Published public private(set) var lastfmUser: String { didSet { defaults.set(lastfmUser, forKey: "lastfmUser") } }
+    @Published public private(set) var lastfmConnecting = false
+    @Published public var listenbrainzEnabled: Bool { didSet { defaults.set(listenbrainzEnabled, forKey: "listenbrainzEnabled") } }
+    @Published public var listenbrainzToken: String { didSet { defaults.set(listenbrainzToken, forKey: "listenbrainzToken") } }
+    @Published public private(set) var listenbrainzUser: String { didSet { defaults.set(listenbrainzUser, forKey: "listenbrainzUser") } }
+    @Published public private(set) var status = ""
+    @Published public private(set) var pending = 0
 
     private var lastfmSession: String { didSet { defaults.set(lastfmSession, forKey: "lastfmSession") } }
     private let player: PlayerController
@@ -32,7 +34,7 @@ final class ScrobbleController: ObservableObject {
     private var lastTick = Date()
     private var lastPosition: TimeInterval = 0
 
-    init(player: PlayerController, metadata: MetadataStore) {
+    public init(player: PlayerController, metadata: MetadataStore) {
         self.player = player
         self.metadata = metadata
         lastfmEnabled = defaults.bool(forKey: "lastfmEnabled")
@@ -49,7 +51,7 @@ final class ScrobbleController: ObservableObject {
         flush()
     }
 
-    var lastfmConnected: Bool { !lastfmSession.isEmpty }
+    public var lastfmConnected: Bool { !lastfmSession.isEmpty }
 
     private var services: [any ScrobbleService] {
         var s: [any ScrobbleService] = []
@@ -117,7 +119,7 @@ final class ScrobbleController: ObservableObject {
         }
     }
 
-    func flush() {
+    public func flush() {
         let s = services
         Task {
             await queue.flush(s)
@@ -132,7 +134,7 @@ final class ScrobbleController: ObservableObject {
     // MARK: Accounts
 
     /// Opens the Last.fm approval page, then polls for the session for up to two minutes.
-    func connectLastFM() {
+    public func connectLastFM() {
         let key = lastfmKey.trimmingCharacters(in: .whitespaces)
         let secret = lastfmSecret.trimmingCharacters(in: .whitespaces)
         guard !key.isEmpty, !secret.isEmpty else { status = "Enter the API key and shared secret first"; return }
@@ -142,7 +144,7 @@ final class ScrobbleController: ObservableObject {
             defer { lastfmConnecting = false }
             do {
                 let token = try await LastFMService.requestToken(apiKey: key, secret: secret)
-                NSWorkspace.shared.open(LastFMService.authURL(apiKey: key, token: token))
+                openURL(LastFMService.authURL(apiKey: key, token: token))
                 for _ in 0..<60 {
                     try await Task.sleep(nanoseconds: 2_000_000_000)
                     if let (name, sk) = try? await LastFMService.session(apiKey: key, secret: secret, token: token) {
@@ -161,14 +163,14 @@ final class ScrobbleController: ObservableObject {
         }
     }
 
-    func disconnectLastFM() {
+    public func disconnectLastFM() {
         lastfmSession = ""
         lastfmUser = ""
         lastfmEnabled = false
         Task { await queue.discard("lastfm") }
     }
 
-    func connectListenBrainz() {
+    public func connectListenBrainz() {
         let token = listenbrainzToken.trimmingCharacters(in: .whitespaces)
         guard !token.isEmpty else { return }
         status = "Checking ListenBrainz token…"
@@ -185,7 +187,7 @@ final class ScrobbleController: ObservableObject {
         }
     }
 
-    func disconnectListenBrainz() {
+    public func disconnectListenBrainz() {
         listenbrainzUser = ""
         listenbrainzEnabled = false
         Task { await queue.discard("listenbrainz") }

@@ -1,6 +1,8 @@
 import Accelerate
 import AVFAudio
+#if os(macOS)
 import CoreAudio
+#endif
 import Foundation
 
 public struct SignalPath: Equatable, Sendable {
@@ -94,11 +96,11 @@ public final class PlaybackEngine: @unchecked Sendable {
     private var orphanEnd: Slot?
     private var generation = 0
     private var wantsPlaying = false
-    private var selectedDevice: AudioDeviceID = 0
+    private var selectedDevice: OutputDeviceID = 0
     private var volume: Float = 1
     private var matchSampleRate = true
     private var exclusive = false
-    private var hoggedDevice: AudioDeviceID = 0
+    private var hoggedDevice: OutputDeviceID = 0
 
     private let lock = NSLock()
     private var snapshot = Snapshot()
@@ -192,7 +194,7 @@ public final class PlaybackEngine: @unchecked Sendable {
     }
 
     /// nil selects the system default output.
-    public func setDevice(_ id: AudioDeviceID?) {
+    public func setDevice(_ id: OutputDeviceID?) {
         queue.async {
             self.releaseHog()
             self.selectedDevice = id ?? 0
@@ -303,7 +305,8 @@ public final class PlaybackEngine: @unchecked Sendable {
 
     // MARK: Internals (queue only)
 
-    private func effectiveDevice() -> AudioDeviceID {
+    #if os(macOS)
+    private func effectiveDevice() -> OutputDeviceID {
         selectedDevice != 0 ? selectedDevice : AudioHardware.defaultOutputDevice()
     }
 
@@ -320,6 +323,10 @@ public final class PlaybackEngine: @unchecked Sendable {
             hoggedDevice = 0
         }
     }
+    #else
+    private func applyDevice() {}
+    private func releaseHog() {}
+    #endif
 
     private func resetScheduling() {
         inFlight = 0
@@ -358,6 +365,7 @@ public final class PlaybackEngine: @unchecked Sendable {
 
     /// Makes sure the graph runs `format`, matching the device rate when enabled.
     private func configure(for format: AVAudioFormat) throws {
+        #if os(macOS)
         let device = effectiveDevice()
         let targetRate = matchSampleRate ? AudioHardware.bestRate(for: format.sampleRate, device: device) : nil
         let rateOK = targetRate == nil || AudioHardware.nominalSampleRate(device) == targetRate
@@ -367,6 +375,15 @@ public final class PlaybackEngine: @unchecked Sendable {
         if selectedDevice != 0 { applyDevice() }
         if let r = targetRate { AudioHardware.setNominalSampleRate(device, r) }
         if exclusive, AudioHardware.setHog(device, enabled: true) { hoggedDevice = device }
+        #else
+        let session = AVAudioSession.sharedInstance()
+        let rateOK = !matchSampleRate || session.sampleRate == format.sampleRate
+        if let cf = connectedFormat, Self.compatible(cf, format), rateOK, engine.isRunning { return }
+
+        engine.stop()
+        if matchSampleRate { try? session.setPreferredSampleRate(format.sampleRate) }
+        try? session.setActive(true)
+        #endif
 
         if tapInstalled {
             player.removeTap(onBus: 0)
@@ -388,15 +405,21 @@ public final class PlaybackEngine: @unchecked Sendable {
     }
 
     private func publishSignalPath() {
-        let device = effectiveDevice()
         var path = SignalPath()
         if let f = current?.decoder.processingFormat {
             path.sourceRate = f.sampleRate
             path.sourceChannels = Int(f.channelCount)
         }
+        #if os(macOS)
+        let device = effectiveDevice()
         path.deviceName = AudioHardware.name(of: device)
         path.deviceRate = AudioHardware.nominalSampleRate(device)
         path.exclusive = hoggedDevice != 0 && AudioHardware.hogOwner(device) == getpid()
+        #else
+        let session = AVAudioSession.sharedInstance()
+        path.deviceName = session.currentRoute.outputs.first?.portName ?? "iPhone"
+        path.deviceRate = session.sampleRate
+        #endif
         path.softwareVolume = volume
         if let g = current?.gain, g != 1 { path.gainDB = 20 * log10(g) }
         path.equalizer = eqSettings.active

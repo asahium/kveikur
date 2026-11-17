@@ -44,6 +44,7 @@ final class AppModel: ObservableObject {
         scanner = LibraryScanner(store: store)
         player = PlayerController(metadata: metadata)
         scrobbler = ScrobbleController(player: player, metadata: metadata)
+        scrobbler.openURL = { NSWorkspace.shared.open($0) }
         roots = (defaults.stringArray(forKey: "libraryRoots") ?? []).map { URL(fileURLWithPath: $0) }
         showTagTitles = defaults.object(forKey: "showTagTitles") as? Bool ?? true
         lyricsAutoFetch = defaults.object(forKey: "lyricsAutoFetch") as? Bool ?? true

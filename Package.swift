@@ -3,9 +3,10 @@ import PackageDescription
 
 let package = Package(
     name: "Kveikur",
-    platforms: [.macOS(.v15)],
+    platforms: [.macOS(.v15), .iOS(.v18)],
     products: [
         .executable(name: "Kveikur", targets: ["Kveikur"]),
+        .library(name: "KveikurCore", targets: ["KveikurCore"]),
     ],
     targets: [
         .target(

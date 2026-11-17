@@ -1,4 +1,6 @@
-.PHONY: build app run debug test clean icon
+.PHONY: build app run debug test clean icon ios ios-sim
+
+IOS_SIM ?= iPhone 17 Pro
 
 build:
 	swift build -c release
@@ -17,6 +19,16 @@ test:
 
 clean:
 	rm -rf .build build
+
+ios:
+	cd iOS && xcodegen generate && open KveikurMobile.xcodeproj
+
+ios-sim:
+	cd iOS && xcodegen generate && xcodebuild -project KveikurMobile.xcodeproj -scheme KveikurMobile \
+		-destination 'platform=iOS Simulator,name=$(IOS_SIM)' -derivedDataPath ../.build/ios build
+	xcrun simctl boot '$(IOS_SIM)' 2>/dev/null || true
+	xcrun simctl install booted .build/ios/Build/Products/Debug-iphonesimulator/Kveikur.app
+	xcrun simctl launch booted dev.kveikur.mobile
 
 icon:
 	swift scripts/make-icon.swift /tmp/kveikur-icon.png
