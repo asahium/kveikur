@@ -2,11 +2,13 @@ import AVKit
 import KveikurCore
 import SwiftUI
 
+/// Always on screen below the library, so it never covers the last row; empty until something is loaded.
 struct MiniPlayer: View {
     @EnvironmentObject var player: PlayerController
     let open: () -> Void
 
     var body: some View {
+        let loaded = player.currentURL != nil
         VStack(spacing: 0) {
             ClockProgress(clock: player.clock).frame(height: 2)
             HStack(spacing: 14) {
@@ -28,10 +30,12 @@ struct MiniPlayer: View {
             .foregroundStyle(Nord.n6)
             .padding(.horizontal, 16)
             .padding(.vertical, 10)
+            .opacity(loaded ? 1 : 0)
         }
         .background(Nord.bar)
         .contentShape(Rectangle())
-        .onTapGesture(perform: open)
+        .onTapGesture { if loaded { open() } }
+        .allowsHitTesting(loaded)
     }
 }
 
@@ -87,7 +91,17 @@ private struct PlayingTab: View {
 
     var body: some View {
         VStack(spacing: 22) {
-            Spacer()
+            Spacer(minLength: 8)
+            if let art = player.artwork {
+                Image(uiImage: art)
+                    .resizable()
+                    .scaledToFit()
+                    .clipShape(RoundedRectangle(cornerRadius: 10))
+                    .shadow(color: .black.opacity(0.35), radius: 16, y: 6)
+                    .frame(maxWidth: 320, maxHeight: 320)
+                    .padding(.horizontal, 32)
+                    .layoutPriority(-1)
+            }
             VStack(spacing: 6) {
                 Text(player.current?.displayTitle ?? player.currentURL?.deletingPathExtension().lastPathComponent ?? "Nothing playing")
                     .font(.title2.weight(.bold))

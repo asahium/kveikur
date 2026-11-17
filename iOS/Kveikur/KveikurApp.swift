@@ -31,6 +31,14 @@ struct RootView: View {
     @State private var playerTab: NowPlayingView.Tab = .playing
 
     var body: some View {
+        VStack(spacing: 0) {
+            library
+            MiniPlayer { showPlayer = true }
+        }
+        .background(Nord.bar.ignoresSafeArea(edges: .bottom))
+    }
+
+    private var library: some View {
         NavigationStack(path: $path) {
             List {
                 Section {
@@ -62,11 +70,6 @@ struct RootView: View {
                 ToolbarItem(placement: .topBarTrailing) {
                     Button { showSettings = true } label: { Image(systemName: "gearshape") }
                 }
-            }
-        }
-        .safeAreaInset(edge: .bottom, spacing: 0) {
-            if player.currentURL != nil {
-                MiniPlayer { showPlayer = true }
             }
         }
         .fileImporter(isPresented: $picking, allowedContentTypes: [.folder]) { result in
