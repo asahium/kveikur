@@ -234,6 +234,7 @@ final class MainViewController: NSViewController, NSTextFieldDelegate, NSSplitVi
     }
 
     /// The preview column only exists when the current folder has subfolders; track-only folders get the full width.
+    /// A stray .m3u next to an album's tracks doesn't count.
     private func setPreviewHidden(_ hidden: Bool) {
         guard hidden != previewPane.isHidden else { return }
         guard didSetInitialSplit else { previewPane.isHidden = hidden; return }
@@ -527,7 +528,8 @@ final class MainViewController: NSViewController, NSTextFieldDelegate, NSSplitVi
         if case .track(let u) = browser.preview { cursorTrack = u }
         let playing = app.player.currentURL
         inspector.showInfo(inspector.followCursor ? (cursorTrack ?? playing) : (playing ?? cursorTrack))
-        setPreviewHidden(!browser.visible.contains { $0.isContainer })
+        let inFolder = if case .folder = browser.location { true } else { false }
+        setPreviewHidden(!browser.visible.contains { $0.isContainer && !(inFolder && $0.kind == .playlist) })
         if case .entries(_, let list) = browser.preview {
             previewCol.set(list, highlight: nil)
         } else {
