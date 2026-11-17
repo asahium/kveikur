@@ -1,6 +1,6 @@
 # Kveikur - a folder-first music player for macOS
 
-[![CI](https://github.com/asahium/kveikur/actions/workflows/ci.yml/badge.svg)](https://github.com/asahium/kveikur/actions/workflows/ci.yml)
+[![CI](https://github.com/asahium/kveikur/actions/workflows/ci.yml/badge.svg)](https://github.com/asahium/kveikur/actions/workflows/ci.yml) · **[asahium.github.io/kveikur](https://asahium.github.io/kveikur/)**
 
 Kveikur is a native macOS player for music kept in folders. You browse it like [yazi](https://github.com/sxyazi/yazi), with parent columns, the current folder, a preview and vim keys. An inspector on the right shows the track, its lyrics, the queue, a live analysis and the signal path to the DAC. It uses Nord colours, shows no artwork in the browser and imports nothing: the folders are the library.
 

@@ -1,0 +1,274 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Kveikur — a folder-first music player for macOS</title>
+<meta name="description" content="Kveikur is a native macOS music player for music kept in folders: yazi-style columns, vim keys, gapless bit-perfect playback, lyrics, CUE sheets, scrobbling.">
+<meta property="og:title" content="Kveikur">
+<meta property="og:description" content="A folder-first music player for macOS, with vim keys and a signal-path inspector.">
+<meta property="og:image" content="https://asahium.github.io/kveikur/img/ios-playing.png">
+<link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><circle cx='50' cy='50' r='46' fill='%2388C0D0'/><path d='M38 28v44l32-22z' fill='%232E3440'/></svg>">
+<style>
+  :root {
+    --n0: #2E3440; --n1: #3B4252; --n2: #434C5E; --n3: #4C566A;
+    --n4: #D8DEE9; --n5: #E5E9F0; --n6: #ECEFF4;
+    --frost7: #8FBCBB; --frost8: #88C0D0; --frost9: #81A1C1; --frost10: #5E81AC;
+    --green: #A3BE8C; --yellow: #EBCB8B; --purple: #B48EAD; --muted: #7B88A1;
+    --mono: ui-monospace, "SF Mono", Menlo, monospace;
+  }
+  * { box-sizing: border-box; }
+  html { scroll-behavior: smooth; }
+  body {
+    margin: 0; background: var(--n0); color: var(--n4);
+    font: 16px/1.6 -apple-system, BlinkMacSystemFont, "Inter", "Segoe UI", sans-serif;
+    -webkit-font-smoothing: antialiased;
+  }
+  a { color: var(--frost8); text-decoration: none; }
+  a:hover { text-decoration: underline; }
+  code, kbd { font-family: var(--mono); font-size: .88em; }
+  kbd {
+    display: inline-block; min-width: 1.7em; padding: 1px 6px; text-align: center;
+    background: var(--n1); border: 1px solid var(--n3); border-bottom-width: 2px; border-radius: 5px; color: var(--n6);
+  }
+  .wrap { max-width: 1080px; margin: 0 auto; padding: 0 24px; }
+
+  nav { display: flex; justify-content: space-between; align-items: center; padding: 22px 0; }
+  nav .brand { font-weight: 700; color: var(--n6); letter-spacing: .02em; }
+  nav .links a { margin-left: 22px; color: var(--n4); }
+
+  .hero { padding: 56px 0 36px; text-align: center; }
+  .hero h1 { margin: 0; font-size: clamp(44px, 8vw, 76px); line-height: 1; color: var(--n6); letter-spacing: -.02em; }
+  .hero h1 span { color: var(--frost8); }
+  .hero p.tag { margin: 18px auto 0; max-width: 640px; font-size: 20px; color: var(--n5); }
+  .hero p.sub { margin: 10px auto 0; max-width: 620px; color: var(--muted); }
+  .cta { margin-top: 30px; display: flex; gap: 12px; justify-content: center; flex-wrap: wrap; }
+  .btn { padding: 11px 20px; border-radius: 9px; font-weight: 600; border: 1px solid var(--n3); color: var(--n6); }
+  .btn.primary { background: var(--frost8); border-color: var(--frost8); color: var(--n0); }
+  .btn:hover { text-decoration: none; filter: brightness(1.08); }
+  .note { margin-top: 12px; font-size: 13px; color: var(--muted); }
+
+  /* Browser mock-up */
+  .mock {
+    margin: 46px auto 0; border-radius: 12px; overflow: hidden; background: var(--n0);
+    border: 1px solid var(--n2); box-shadow: 0 30px 80px rgba(0,0,0,.45); text-align: left;
+    font-family: var(--mono); font-size: 12.5px;
+  }
+  .mock .titlebar { height: 30px; background: #272C36; display: flex; align-items: center; padding: 0 12px; gap: 7px; }
+  .mock .titlebar i { width: 11px; height: 11px; border-radius: 50%; background: var(--n3); display: block; }
+  .mock .body { display: grid; grid-template-columns: 120px 150px 1fr 250px; min-height: 340px; }
+  .col { border-right: 1px solid var(--n2); padding: 6px 0; overflow: hidden; }
+  .row { padding: 3px 10px; margin: 1px 5px; border-radius: 6px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; color: var(--frost8); }
+  .row.t { color: var(--n4); display: flex; justify-content: space-between; gap: 10px; }
+  .row.t .ic { color: var(--frost7); margin-right: 7px; }
+  .row.t small { color: var(--muted); font-size: 11.5px; }
+  .row.sel { background: var(--frost8); color: var(--n0); }
+  .row.sel small, .row.sel .ic { color: var(--n0); }
+  .row.dim { background: var(--n2); color: var(--n6); }
+  .row.play { color: var(--green); font-weight: 600; }
+  .row.play .ic { color: var(--green); }
+  .insp { background: var(--n1); padding: 14px; font-family: -apple-system, sans-serif; font-size: 12px; }
+  .insp .tabs { display: flex; gap: 6px; margin-bottom: 14px; }
+  .insp .tabs b { flex: 1; height: 20px; border-radius: 10px; background: var(--n0); }
+  .insp .tabs b.on { background: var(--frost10); }
+  .insp h4 { margin: 0; color: var(--n6); font-size: 14px; }
+  .insp .ar { color: var(--muted); margin-bottom: 12px; }
+  .insp dl { display: grid; grid-template-columns: 90px 1fr; gap: 3px 8px; margin: 0; }
+  .insp dt { color: var(--muted); } .insp dd { margin: 0; color: var(--n5); }
+  .insp .path { margin-top: 12px; padding: 8px; background: var(--n0); border-radius: 6px; color: var(--green); font-family: var(--mono); font-size: 11px; }
+  .mock .status { border-top: 1px solid var(--n2); padding: 5px 12px; color: var(--muted); display: flex; justify-content: space-between; }
+  .mock .transport { background: #272C36; padding: 10px 14px; display: flex; align-items: center; gap: 16px; font-family: -apple-system, sans-serif; }
+  .mock .transport .np b { display: block; color: var(--n6); font-size: 13px; } .mock .transport .np span { color: var(--muted); font-size: 11.5px; }
+  .mock .bar { flex: 1; height: 4px; border-radius: 2px; background: var(--n3); position: relative; }
+  .mock .bar::after { content: ""; position: absolute; inset: 0 62% 0 0; background: var(--frost8); border-radius: 2px; }
+  .mock .ctrl { color: var(--n6); letter-spacing: 6px; }
+  @media (max-width: 820px) { .mock .body { grid-template-columns: 0 120px 1fr; } .mock .body > :first-child, .insp { display: none; } }
+
+  section { padding: 72px 0 0; }
+  h2 { color: var(--n6); font-size: 30px; margin: 0 0 8px; letter-spacing: -.01em; }
+  .lead { color: var(--muted); margin: 0 0 30px; max-width: 700px; }
+
+  .grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(300px, 1fr)); gap: 16px; }
+  .card { background: var(--n1); border: 1px solid var(--n2); border-radius: 12px; padding: 20px 22px; }
+  .card h3 { margin: 0 0 6px; color: var(--n6); font-size: 17px; display: flex; gap: 10px; align-items: center; }
+  .card h3 .dot { width: 9px; height: 9px; border-radius: 50%; background: var(--frost8); flex: none; }
+  .card p { margin: 0; color: var(--n4); font-size: 15px; }
+  .card:nth-child(4n+2) .dot { background: var(--green); }
+  .card:nth-child(4n+3) .dot { background: var(--purple); }
+  .card:nth-child(4n+4) .dot { background: var(--yellow); }
+
+  .keys { display: grid; grid-template-columns: repeat(auto-fill, minmax(240px, 1fr)); gap: 8px 28px; }
+  .keys div { display: flex; justify-content: space-between; gap: 14px; padding: 7px 0; border-bottom: 1px solid var(--n1); }
+  .keys span { color: var(--n4); }
+
+  .shots { display: grid; grid-template-columns: 1.7fr 1fr 1fr; gap: 18px; align-items: start; }
+  .shots figure { margin: 0; }
+  .shots img { width: 100%; border-radius: 12px; border: 1px solid var(--n2); display: block; background: var(--n1); }
+  .shots figcaption { color: var(--muted); font-size: 14px; margin-top: 8px; }
+  @media (max-width: 820px) { .shots { grid-template-columns: 1fr 1fr; } .shots figure:first-child { grid-column: 1 / -1; } }
+
+  .install { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; }
+  @media (max-width: 820px) { .install { grid-template-columns: 1fr; } }
+  pre { background: var(--n1); border: 1px solid var(--n2); border-radius: 10px; padding: 14px 16px; overflow-x: auto; color: var(--n5); margin: 12px 0 0; }
+  ol { padding-left: 20px; margin: 10px 0 0; } li { margin: 4px 0; }
+
+  footer { margin: 90px 0 0; padding: 26px 0 40px; border-top: 1px solid var(--n1); color: var(--muted); font-size: 14px; display: flex; justify-content: space-between; flex-wrap: wrap; gap: 10px; }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <nav>
+    <span class="brand">Kveikur</span>
+    <span class="links">
+      <a href="#features">Features</a>
+      <a href="#keys">Keys</a>
+      <a href="#install">Install</a>
+      <a href="https://github.com/asahium/kveikur">GitHub</a>
+    </span>
+  </nav>
+
+  <header class="hero">
+    <h1>Kveikur<span>.</span></h1>
+    <p class="tag">A native macOS music player for people who keep their music in folders.</p>
+    <p class="sub">Browse like <a href="https://github.com/sxyazi/yazi">yazi</a>, drive it with vim keys, and see exactly what reaches your DAC. No import, no library to manage: your folders are the library.</p>
+    <div class="cta">
+      <a class="btn primary" href="https://github.com/asahium/kveikur/releases/latest">Download for macOS</a>
+      <a class="btn" href="https://github.com/asahium/kveikur">Source on GitHub</a>
+    </div>
+    <p class="note">Apple Silicon · macOS 15 or later</p>
+
+    <div class="mock" aria-hidden="true">
+      <div class="titlebar"><i></i><i></i><i></i></div>
+      <div class="body">
+        <div class="col">
+          <div class="row dim">local</div>
+          <div class="row">Playlists</div>
+        </div>
+        <div class="col">
+          <div class="row">Fazerdaze</div>
+          <div class="row">Fugazi</div>
+          <div class="row">Low Roar</div>
+          <div class="row">Rise Against</div>
+          <div class="row">Shortparis</div>
+          <div class="row dim">Sigur Rós</div>
+          <div class="row">The Smiths</div>
+          <div class="row">toe</div>
+          <div class="row">Woodkid</div>
+        </div>
+        <div class="col">
+          <div class="row t"><span><span class="ic">♪</span>01 Brennisteinn</span><small>7:44  FLAC 16/44.1</small></div>
+          <div class="row t"><span><span class="ic">♪</span>02 Hrafntinna</span><small>6:22  FLAC 16/44.1</small></div>
+          <div class="row t play"><span><span class="ic">◉</span>03 Ísjaki</span><small>5:03  FLAC 16/44.1</small></div>
+          <div class="row t sel"><span><span class="ic">♪</span>04 Yfirborð</span><small>4:19  FLAC 16/44.1</small></div>
+          <div class="row t"><span><span class="ic">♪</span>05 Stormur</span><small>4:55  FLAC 16/44.1</small></div>
+          <div class="row t"><span><span class="ic">♪</span>06 Kveikur</span><small>5:55  FLAC 16/44.1</small></div>
+          <div class="row t"><span><span class="ic">♪</span>07 Rafstraumur</span><small>4:57  FLAC 16/44.1</small></div>
+          <div class="row t"><span><span class="ic">♪</span>08 Bláþráður</span><small>5:11  FLAC 16/44.1</small></div>
+          <div class="row t"><span><span class="ic">♪</span>09 Var</span><small>3:45  FLAC 16/44.1</small></div>
+        </div>
+        <div class="insp">
+          <div class="tabs"><b class="on"></b><b></b><b></b><b></b><b></b></div>
+          <h4>Yfirborð</h4>
+          <div class="ar">Sigur Rós — Kveikur</div>
+          <dl>
+            <dt>Codec</dt><dd>FLAC</dd>
+            <dt>Sample rate</dt><dd>44.1 kHz</dd>
+            <dt>Bit depth</dt><dd>16-bit</dd>
+            <dt>Bitrate</dt><dd>912 kbps</dd>
+            <dt>ReplayGain</dt><dd>album −7.4 dB</dd>
+          </dl>
+          <div class="path">FLAC 44.1 → device 44.1 kHz<br>bit-perfect · exclusive</div>
+        </div>
+      </div>
+      <div class="status"><span>~/Music/local/Sigur Rós/2013 - Kveikur</span><span>4/9</span></div>
+      <div class="transport">
+        <div class="np"><b>Ísjaki</b><span>Sigur Rós — Kveikur</span></div>
+        <span class="ctrl">◀◀ ❚❚ ▶▶</span>
+        <div class="bar"></div>
+        <span style="color:var(--muted);font-size:12px">1:55 / 5:03</span>
+      </div>
+    </div>
+  </header>
+
+  <section id="features">
+    <h2>What it does</h2>
+    <p class="lead">A sensible minimum, done properly. Everything is keyboard-reachable, nothing destructive is.</p>
+    <div class="grid">
+      <div class="card"><h3><span class="dot"></span>Folder-first browser</h3><p>Parent columns, the current folder and a live preview, yazi-style. Fuzzy jump to any folder, search tracks across the library, a command palette for everything else.</p></div>
+      <div class="card"><h3><span class="dot"></span>Gapless, bit-perfect</h3><p>Sample-accurate gapless playback. Matches the device sample rate to the file, optional exclusive (hog) mode, and an inspector that shows the full signal path to the DAC.</p></div>
+      <div class="card"><h3><span class="dot"></span>Every common format</h3><p>FLAC, ALAC, AAC, MP3, WAV, AIFF, Ogg Vorbis and Opus. Single-image rips with a CUE sheet play as separate tracks, with sheet encodings detected for you.</p></div>
+      <div class="card"><h3><span class="dot"></span>ReplayGain and EQ</h3><p>Track or album gain from tags, or measured (EBU R128) for untagged files. A 10-band EQ with presets and AutoEQ headphone profile import.</p></div>
+      <div class="card"><h3><span class="dot"></span>Lyrics and karaoke</h3><p>Sidecar <code>.lrc</code>, embedded tags, then LRCLIB and Genius. Synced lines scroll with the music, and there is a full-screen karaoke view.</p></div>
+      <div class="card"><h3><span class="dot"></span>Analysis</h3><p>Live spectrum, level meters, goniometer, waveform, loudness and a spectrogram for the track that is playing.</p></div>
+      <div class="card"><h3><span class="dot"></span>History and statistics</h3><p>Every play is stored locally. Top artists, albums and tracks by week, month, year or all time, plus Most Played, Recently Played, Recently Added and Never Played lists.</p></div>
+      <div class="card"><h3><span class="dot"></span>Scrobbling</h3><p>Last.fm and ListenBrainz, counted on real listening time and queued offline. Your Last.fm history flows back in, so the Mac and the phone share statistics.</p></div>
+      <div class="card"><h3><span class="dot"></span>Tags and files, mouse only</h3><p>Edit tags (FLAC, MP3, M4A), rename and move to Trash from the right-click menu. None of it has a key binding, so a stray keystroke never deletes anything.</p></div>
+      <div class="card"><h3><span class="dot"></span>Duplicate finder</h3><p>Finds albums and tracks stored more than once and marks the copy worth keeping: lossless first, then bit depth and sample rate, then the most complete edition.</p></div>
+      <div class="card"><h3><span class="dot"></span>Sleep timer</h3><p>Stop after 15 to 90 minutes with a gentle fade, or at the end of the current track.</p></div>
+      <div class="card"><h3><span class="dot"></span>Light on resources</h3><p>About 90 MB of memory, zero CPU when paused: the audio engine shuts down after a short pause and resumes on the exact sample. State comes back on launch.</p></div>
+    </div>
+  </section>
+
+  <section id="shots">
+    <h2>Screenshots</h2>
+    <p class="lead">The duplicate finder on a real library, and the iPhone beta.</p>
+    <div class="shots">
+      <figure><img src="img/duplicates.png" alt="Duplicate finder window" loading="lazy"><figcaption>Duplicates: the copy to keep is starred.</figcaption></figure>
+      <figure><img src="img/ios-playing.png" alt="iPhone now playing screen" loading="lazy"><figcaption>iPhone: now playing.</figcaption></figure>
+      <figure><img src="img/ios-folder.png" alt="iPhone folder view" loading="lazy"><figcaption>iPhone: a folder.</figcaption></figure>
+    </div>
+  </section>
+
+  <section id="keys">
+    <h2>Keys</h2>
+    <p class="lead">Hold <kbd>⌘</kbd> for a moment inside the app to see every shortcut. The basics:</p>
+    <div class="keys">
+      <div><span>Navigate</span><span><kbd>h</kbd> <kbd>j</kbd> <kbd>k</kbd> <kbd>l</kbd></span></div>
+      <div><span>Open or play</span><span><kbd>Enter</kbd></span></div>
+      <div><span>Play selection / folder</span><span><kbd>p</kbd> <kbd>P</kbd></span></div>
+      <div><span>Queue / play next</span><span><kbd>a</kbd> <kbd>A</kbd></span></div>
+      <div><span>Play / pause</span><span><kbd>c</kbd></span></div>
+      <div><span>Previous / next</span><span><kbd>[</kbd> <kbd>]</kbd></span></div>
+      <div><span>Seek 5 s</span><span><kbd>,</kbd> <kbd>.</kbd></span></div>
+      <div><span>Jump to folder</span><span><kbd>z</kbd></span></div>
+      <div><span>Search tracks</span><span><kbd>s</kbd></span></div>
+      <div><span>Command palette</span><span><kbd>:</kbd></span></div>
+      <div><span>Inspector tabs</span><span><kbd>1</kbd>–<kbd>5</kbd></span></div>
+      <div><span>Full-screen lyrics</span><span><kbd>⌘</kbd><kbd>L</kbd></span></div>
+      <div><span>Duplicates</span><span><kbd>g</kbd><kbd>D</kbd></span></div>
+      <div><span>Statistics</span><span><kbd>g</kbd><kbd>s</kbd></span></div>
+    </div>
+  </section>
+
+  <section id="install">
+    <h2>Install</h2>
+    <div class="install">
+      <div class="card">
+        <h3><span class="dot"></span>macOS</h3>
+        <ol>
+          <li>Download the latest <code>.dmg</code> from <a href="https://github.com/asahium/kveikur/releases/latest">releases</a>.</li>
+          <li>Drag Kveikur into Applications.</li>
+          <li>The build is not notarized, so open it the first time with right-click → Open, or run:</li>
+        </ol>
+        <pre>xattr -dr com.apple.quarantine /Applications/Kveikur.app</pre>
+        <p style="margin-top:12px">Kveikur checks for new releases once a day.</p>
+      </div>
+      <div class="card">
+        <h3><span class="dot"></span>Build from source</h3>
+        <p>Xcode 16 or newer, no third-party dependencies.</p>
+        <pre>git clone https://github.com/asahium/kveikur
+cd kveikur
+make run        # build and open
+make test       # unit tests
+make ios-device # iPhone beta, free Apple ID</pre>
+      </div>
+    </div>
+  </section>
+
+  <footer>
+    <span>Kveikur — Icelandic for “candlewick”.</span>
+    <span><a href="https://github.com/asahium/kveikur">GitHub</a> · <a href="https://github.com/asahium/kveikur/releases">Releases</a> · <a href="https://github.com/asahium/kveikur/issues">Issues</a></span>
+  </footer>
+</div>
+</body>
+</html>
