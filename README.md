@@ -25,7 +25,19 @@ Nord colours, no artwork in the browser, no library management beyond reading yo
   offline plays are queued on disk and sent later.
 - **Inspector.** Info and tags, lyrics, queue, analysis (live spectrum, meters, goniometer, waveform, loudness,
   spectrogram), and output (device capabilities, bit-perfect status, DSP in the path).
+- **CUE sheets.** Single-image rips (`.cue` + one FLAC/APE/WAV) show up as separate tracks and play sample-accurate
+  segments. Sheet encodings (UTF-8/16, CP1251, Shift-JIS, CP1252) are detected; per-file sheets are ignored.
+- **File actions, mouse only.** Right-click a track, folder or selection for Edit Tags…, Rename… and Move to Trash….
+  None of them has a key binding, so nothing gets renamed or deleted by a stray keystroke. Tags are written in place
+  for FLAC, MP3 (ID3v2.3/2.4) and MP4/M4A; renames carry `.lrc`/`.cue` sidecars along and update queue and playlists.
+- **Duplicates.** `gD` (File → Find Duplicates…) finds albums and tracks stored more than once and marks the copy to
+  keep: lossless first, then bit depth and sample rate, then the most complete edition. Trash the rest from the
+  right-click menu.
+- **History and statistics.** Every counted play is stored locally (no account needed). `gs` opens listening
+  statistics: plays and hours per day, top artists, albums and tracks for 7 days, 30 days, a year or all time.
+  Playlists also lists smart playlists: Most Played, Recently Played, Recently Added (by file date), Never Played.
 - **Restores state.** Folder, cursor, queue and position come back on launch, paused.
+- **Updates.** Kveikur → Check for Updates… (and a daily check) looks at the latest GitHub release.
 
 ## Keys
 
@@ -45,6 +57,7 @@ Hold `⌘` for a moment to see every shortcut. The basics:
 | `⌘L` | Full-screen lyrics |
 | `⌘E`, `E`, `gR` | Equalizer window, EQ on/off, cycle ReplayGain |
 | `⌘0` | Toggle inspector |
+| `gD`, `gs` | Duplicates, listening statistics |
 
 ## Building
 
@@ -54,12 +67,26 @@ Requires macOS 15 and Xcode 16 or newer (Swift 6 toolchain). No third-party depe
 make app      # build/Kveikur.app (release, ad-hoc signed)
 make run      # build and open
 make test     # unit tests
+make dmg      # build/Kveikur-<version>.dmg
 make icon     # regenerate Resources/AppIcon.icns
 ```
 
 To install, copy `build/Kveikur.app` to `/Applications`.
 
 Network tests (LRCLIB) are skipped unless `KVEIKUR_NETWORK=1` is set.
+
+### CI and releases
+
+`.github/workflows/ci.yml` runs the tests and builds the macOS bundle and the iOS app (simulator, unsigned) on every
+push to `main` that touches code, and on pull requests. Pushing a tag publishes a release with a DMG:
+
+```sh
+git tag v0.2.0 && git push origin v0.2.0
+```
+
+The version comes from the tag. The app is ad-hoc signed, not notarized: on first launch right-click → Open, or run
+`xattr -dr com.apple.quarantine /Applications/Kveikur.app`. While the repository is private, the update check needs a
+GitHub token with read access to its contents (Settings → Updates).
 
 ### iOS (beta)
 
@@ -91,7 +118,8 @@ Sources/KveikurCore   audio engine, decoders, DSP, library (SQLite), metadata, l
 Sources/Kveikur       AppKit/SwiftUI app: browser, inspector, transport, settings, overlays
 iOS/                  SwiftUI iPhone app (XcodeGen project.yml)
 Tests/                XCTest suite for the core
-scripts/              bundle.sh (app bundle + signing), make-icon.swift
+scripts/              bundle.sh (app bundle + signing), dmg.sh, make-icon.swift
+.github/workflows/    CI (tests, macOS + iOS builds) and tag releases
 ```
 
 `KveikurCore` has no UI. The macOS-only parts are output device control (Core Audio HAL), FSEvents folder watching and
@@ -102,7 +130,7 @@ scripts/              bundle.sh (app bundle + signing), make-icon.swift
 | What | Where |
 | --- | --- |
 | Settings, last state | `UserDefaults` domain `dev.kveikur.player` |
-| Library index | `~/Library/Application Support/Kveikur/` |
+| Library index, listening history | `~/Library/Application Support/Kveikur/library.sqlite` |
 | Lyrics cache, ReplayGain measurements, scrobble queue | `~/Library/Application Support/Kveikur/` |
 | Artwork cache | `~/Library/Caches/Kveikur/` |
 | Playlists | `~/Music/Kveikur Playlists/` (configurable) |
@@ -111,8 +139,9 @@ scripts/              bundle.sh (app bundle + signing), make-icon.swift
 
 `KVEIKUR_SNAPSHOT=/tmp/shot.png` writes a PNG of the main window two seconds after launch.
 `KVEIKUR_SNAPSHOT_ACTIONS=parent,karaoke` runs commands first (raw `Command` values),
-`KVEIKUR_SNAPSHOT_WINDOW=Equalizer` captures another window by title, and `KVEIKUR_SNAPSHOT_SHORTCUTS=1` shows the
-shortcut overlay.
+`KVEIKUR_SNAPSHOT_WINDOW=Equalizer` captures another window by title, `KVEIKUR_SNAPSHOT_SHORTCUTS=1` shows the
+shortcut overlay, and `KVEIKUR_SNAPSHOT_FILE=tags|rename|trash` opens a context-menu action on the cursor and captures
+its sheet (nothing is changed unless you confirm).
 
 ## Roadmap
 

@@ -1,4 +1,4 @@
-.PHONY: build app run debug test clean icon ios ios-sim
+.PHONY: build app run debug test clean icon ios ios-sim dmg
 
 IOS_SIM ?= iPhone 17 Pro
 
@@ -16,6 +16,9 @@ debug:
 
 test:
 	swift test
+
+dmg:
+	./scripts/dmg.sh
 
 clean:
 	rm -rf .build build

@@ -56,6 +56,7 @@ struct SettingsView: View {
                     .font(.caption).foregroundStyle(.secondary)
             }
             ScrobbleSettings(s: app.scrobbler)
+            UpdateSettings(u: app.updater)
             Section("Playlists") {
                 HStack {
                     Text(app.playlistsFolder.path).lineLimit(1).truncationMode(.middle)
@@ -66,6 +67,23 @@ struct SettingsView: View {
         }
         .formStyle(.grouped)
         .frame(width: 580, height: 760)
+    }
+}
+
+private struct UpdateSettings: View {
+    @ObservedObject var u: Updater
+
+    var body: some View {
+        Section("Updates") {
+            Toggle("Check for new releases daily", isOn: $u.automatic)
+            SecureField("GitHub token (needed while the repository is private)", text: $u.token)
+            HStack {
+                Text(u.status.isEmpty ? "Version \(Updater.currentVersion)" : u.status)
+                    .font(.caption).foregroundStyle(.secondary)
+                Spacer()
+                Button("Check Now") { u.check(interactive: true) }.disabled(u.checking)
+            }
+        }
     }
 }
 

@@ -837,3 +837,24 @@ final class HistoryTests: XCTestCase {
         XCTAssertEqual(store.playCount(a.path).plays, 2)
     }
 }
+
+final class ReleaseCheckTests: XCTestCase {
+    func testVersionsCompareNumerically() {
+        XCTAssertTrue(ReleaseCheck.isNewer("0.10.0", than: "0.9.2"))
+        XCTAssertTrue(ReleaseCheck.isNewer("1.0.1", than: "1.0"))
+        XCTAssertFalse(ReleaseCheck.isNewer("1.0", than: "1.0.0"))
+        XCTAssertFalse(ReleaseCheck.isNewer("0.1.0", than: "0.2.0-beta"))
+    }
+
+    func testParsesReleaseAndPicksDMG() throws {
+        let json = """
+            {"tag_name": "v0.2.0", "html_url": "https://github.com/asahium/kveikur/releases/tag/v0.2.0", "body": "Notes",
+             "assets": [{"name": "Source.zip", "browser_download_url": "https://x/s.zip"},
+                        {"name": "Kveikur-0.2.0.dmg", "browser_download_url": "https://x/k.dmg"}]}
+            """
+        let r = try XCTUnwrap(ReleaseCheck.parse(Data(json.utf8)))
+        XCTAssertEqual(r.version, "0.2.0")
+        XCTAssertEqual(r.dmg?.absoluteString, "https://x/k.dmg")
+        XCTAssertEqual(r.notes, "Notes")
+    }
+}

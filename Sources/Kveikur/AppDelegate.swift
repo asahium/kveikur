@@ -31,6 +31,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, NSMe
         window.makeKeyAndOrderFront(nil)
         NSApp.mainMenu = buildMenu()
         NSApp.activate()
+        if ProcessInfo.processInfo.environment["KVEIKUR_SNAPSHOT"] == nil { model.updater.checkOnLaunch() }
     }
 
     func applicationWillTerminate(_ notification: Notification) {
@@ -70,6 +71,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, NSMe
             equalizerWindow = w
         }
         equalizerWindow?.makeKeyAndOrderFront(nil)
+    }
+
+    @objc private func checkForUpdates() {
+        model.updater.check(interactive: true)
     }
 
     @objc func showDuplicates() {
@@ -124,6 +129,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, NSMe
 
         let appMenu = NSMenu()
         appMenu.addItem(withTitle: "About Kveikur", action: #selector(NSApplication.orderFrontStandardAboutPanel(_:)), keyEquivalent: "")
+        appMenu.addItem(withTitle: "Check for Updates…", action: #selector(checkForUpdates), keyEquivalent: "").target = self
         appMenu.addItem(.separator())
         appMenu.addItem(withTitle: "Settings…", action: #selector(showSettings), keyEquivalent: ",").target = self
         appMenu.addItem(.separator())

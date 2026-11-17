@@ -11,6 +11,7 @@ final class AppModel: ObservableObject {
     let playlists: PlaylistStore
     let lyrics = LyricsService()
     let scrobbler: ScrobbleController
+    let updater = Updater()
 
     @Published private(set) var roots: [URL]
     @Published private(set) var scanStatus = ""
