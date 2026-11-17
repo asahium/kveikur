@@ -111,7 +111,7 @@ struct RootView: View {
         .task { debugLaunch() }
     }
 
-    /// KVEIKUR_OPEN=relative/path (from Documents), KVEIKUR_PLAY=1, KVEIKUR_SHEET=playing|lyrics|queue|info|settings.
+    /// KVEIKUR_OPEN=relative/path (from Documents), KVEIKUR_PLAY=1, KVEIKUR_SHEET=playing|lyrics|queue|info|settings|stats.
     private func debugLaunch() {
         let env = ProcessInfo.processInfo.environment
         if let rel = env["KVEIKUR_OPEN"] {
@@ -122,6 +122,8 @@ struct RootView: View {
         if let sheet = env["KVEIKUR_SHEET"] {
             if sheet == "settings" {
                 showSettings = true
+            } else if sheet == "stats" {
+                showStats = true
             } else if let t = NowPlayingView.Tab(rawValue: sheet.capitalized) {
                 playerTab = t
                 Task {

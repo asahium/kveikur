@@ -20,7 +20,9 @@ final class StatisticsModel: ObservableObject {
         }
     }
 
-    @Published var range: Range = .month { didSet { load() } }
+    @Published var range = Range(rawValue: UserDefaults.standard.string(forKey: "statsRange") ?? "") ?? .month {
+        didSet { UserDefaults.standard.set(range.rawValue, forKey: "statsRange"); load() }
+    }
     @Published private(set) var stats = ListeningStats()
 
     let app: AppModel
