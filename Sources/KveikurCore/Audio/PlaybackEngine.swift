@@ -106,6 +106,9 @@ public final class PlaybackEngine: @unchecked Sendable {
     private var snapshot = Snapshot()
     private var tapHandler: (@Sendable (AVAudioPCMBuffer) -> Void)?
     private var tapInstalled = false
+    private var idleStop: DispatchWorkItem?
+    /// A paused engine still runs the device IO cycle; after this long it is stopped, and resume rebuilds at the same frame.
+    static let idleStopDelay: TimeInterval = 20
 
     public init() {
         engine.attach(player)
@@ -129,7 +132,7 @@ public final class PlaybackEngine: @unchecked Sendable {
     }
 
     /// The position freezes immediately on the caller's thread, so the UI never reads a half-paused engine.
-    /// Only the player node pauses: the engine keeps running, and resume continues from the same sample.
+    /// Only the player node pauses at first, so a quick resume continues from the same sample; a long pause stops the engine.
     public func pause() {
         let t = currentTime
         updateSnapshot { s in
@@ -142,6 +145,7 @@ public final class PlaybackEngine: @unchecked Sendable {
             guard self.wantsPlaying else { return }
             self.wantsPlaying = false
             self.player.pause()
+            self.scheduleIdleStop()
         }
     }
 
@@ -404,6 +408,19 @@ public final class PlaybackEngine: @unchecked Sendable {
         publishSignalPath()
     }
 
+    private func scheduleIdleStop() {
+        idleStop?.cancel()
+        let gen = generation
+        let work = DispatchWorkItem { [weak self] in
+            guard let self, !self.wantsPlaying, self.generation == gen, self.engine.isRunning else { return }
+            self.engine.stop()
+            self.releaseHog()
+            self.publishSignalPath()
+        }
+        idleStop = work
+        queue.asyncAfter(deadline: .now() + Self.idleStopDelay, execute: work)
+    }
+
     private func publishSignalPath() {
         var path = SignalPath()
         if let f = current?.decoder.processingFormat {
@@ -453,7 +470,7 @@ public final class PlaybackEngine: @unchecked Sendable {
         }
         snapshotFromCurrent()
         fill()
-        if autoplay { player.play() }
+        if autoplay { player.play() } else { scheduleIdleStop() }
         publishSignalPath()
         DispatchQueue.main.async { self.delegate?.engine(self, didStart: url) }
     }
@@ -479,7 +496,7 @@ public final class PlaybackEngine: @unchecked Sendable {
         }
         snapshotFromCurrent()
         fill()
-        if wantsPlaying { player.play() }
+        if wantsPlaying { player.play() } else { scheduleIdleStop() }
     }
 
     private func updateNext(_ url: URL?) {
