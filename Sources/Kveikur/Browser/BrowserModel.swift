@@ -136,13 +136,29 @@ final class BrowserModel {
         }
     }
 
+    nonisolated static func cueEntries(_ sheet: CueSheet) -> [Entry] {
+        let base = sheet.url.deletingPathExtension().lastPathComponent
+        return CueFolders.trackURLs(sheet).map { u in
+            let stamp = MetadataReader.cueStamp(u)
+            return Entry(kind: .track, url: u, name: "\(base) \(u.lastPathComponent)", mtime: stamp?.mtime ?? 0, size: stamp?.size ?? 0)
+        }
+    }
+
     nonisolated static func listFolder(_ url: URL) -> [Entry] {
+        if CueFolders.isSheet(url) { return CueTrackRef.sheet(url).map(cueEntries) ?? [] }
         let keys: [URLResourceKey] = [.isDirectoryKey, .isPackageKey, .contentModificationDateKey, .fileSizeKey]
         guard let items = try? FileManager.default.contentsOfDirectory(at: url, includingPropertiesForKeys: keys,
                                                                        options: [.skipsHiddenFiles]) else { return [] }
+        let sheets = CueFolders.sheets(items)
+        let hidden = Set(sheets.flatMap { $0.splitFiles.map(\.path.pathKey) })
         var folders: [Entry] = []
         var files: [Entry] = []
-        for item in items {
+        if sheets.count == 1 {
+            files += cueEntries(sheets[0])
+        } else {
+            folders += sheets.map { Entry(kind: .folder, url: $0.url, name: $0.url.deletingPathExtension().lastPathComponent) }
+        }
+        for item in items where !hidden.contains(item.path.pathKey) {
             let v = try? item.resourceValues(forKeys: Set(keys))
             if v?.isDirectory == true, v?.isPackage != true {
                 folders.append(Entry(kind: .folder, url: item, name: item.lastPathComponent))
@@ -312,7 +328,8 @@ final class BrowserModel {
 
     /// Opens the folder containing `url` with the cursor on it.
     func reveal(_ url: URL) {
-        navigate(to: .folder(url.deletingLastPathComponent()), cursorOn: url.path)
+        let dir = CueTrackRef.isCue(url) ? CueFolders.listing(of: url) : url.deletingLastPathComponent()
+        navigate(to: .folder(dir), cursorOn: url.path)
     }
 
     // MARK: Cursor
@@ -539,13 +556,15 @@ final class BrowserModel {
     }
 
     nonisolated static func recursiveTracks(_ root: URL) -> [URL] {
+        if CueFolders.isSheet(root) { return CueTrackRef.sheet(root).map(CueFolders.trackURLs) ?? [] }
         guard let walker = FileManager.default.enumerator(at: root, includingPropertiesForKeys: [.isDirectoryKey],
                                                           options: [.skipsHiddenFiles, .skipsPackageDescendants]) else { return [] }
-        var out: [URL] = []
+        var audio: [URL] = []
+        var cues: [URL] = []
         while let u = walker.nextObject() as? URL {
-            if AudioFiles.isAudio(u) { out.append(u) }
+            if AudioFiles.isAudio(u) { audio.append(u) } else if CueFolders.isSheet(u) { cues.append(u) }
         }
-        return out.sorted { $0.path.localizedStandardCompare($1.path) == .orderedAscending }
+        return CueFolders.expand(audio: audio, cues: cues)
     }
 
     /// Tracks in the current listing (playlist order or folder order).
@@ -556,6 +575,19 @@ final class BrowserModel {
         for loc in cache.keys where set.contains(loc.id) { cache[loc] = nil }
         if set.contains(location.id) { reload() }
         if case .playlist = location { reload() }
+    }
+
+    /// After the app itself renamed or trashed items (FSEvents ignores our own changes).
+    func filesChanged(in dirs: [String], cursorOn id: String?) {
+        let set = Set(dirs)
+        for loc in cache.keys where set.contains(loc.id) { cache[loc] = nil }
+        reload(cursorOn: id)
+        loadAncestors()
+    }
+
+    func metadataChanged() {
+        if !filter.isEmpty { recomputeVisible(keeping: cursorEntry?.id) }
+        onChange?([.current, .parent, .preview])
     }
 
     func invalidate(_ loc: Location) {

@@ -45,19 +45,28 @@ public final class LibraryScanner: @unchecked Sendable {
         var existing = store.stamps(underRoot: rootPath)
         var changed: [URL] = []
         var folders = Set<String>()
+        var files: [(URL, Double, Int64)] = []
+        var cues: [URL] = []
 
         while let url = walker.nextObject() as? URL {
             if Task.isCancelled { return }
+            if CueFolders.isSheet(url) { cues.append(url.standardizedFileURL); continue }
             guard AudioFiles.isAudio(url), let v = try? url.resourceValues(forKeys: Set(keys)), v.isDirectory != true else { continue }
             let path = url.standardizedFileURL.path
             var dir = (path as NSString).deletingLastPathComponent
             while dir.count >= rootPath.count, folders.insert(dir).inserted {
                 dir = (dir as NSString).deletingLastPathComponent
             }
-            let mtime = v.contentModificationDate?.timeIntervalSince1970 ?? 0
-            let size = Int64(v.fileSize ?? 0)
-            if let old = existing.removeValue(forKey: path), old.0 == mtime, old.1 == size { continue }
-            changed.append(URL(fileURLWithPath: path))
+            files.append((URL(fileURLWithPath: path), v.contentModificationDate?.timeIntervalSince1970 ?? 0, Int64(v.fileSize ?? 0)))
+        }
+        let sheets = CueFolders.sheets(cues)
+        let hidden = Set(sheets.flatMap { $0.splitFiles.map(\.path.pathKey) })
+        for t in sheets.flatMap(CueFolders.trackURLs) {
+            if let s = MetadataReader.cueStamp(t) { files.append((t, s.mtime, s.size)) }
+        }
+        for (url, mtime, size) in files where !hidden.contains(url.path.pathKey) {
+            if let old = existing.removeValue(forKey: url.path), old.0 == mtime, old.1 == size { continue }
+            changed.append(url)
         }
         store.delete(paths: Array(existing.keys))
         store.replaceFolders(root: rootPath, folders: folders.sorted())

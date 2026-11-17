@@ -214,7 +214,13 @@ struct InfoTab: View {
             r.append(("Duration", Format.duration(m.duration)))
             r.append(("Size", Format.bytes(m.size)))
         }
-        if let u = model.infoURL { r.append(("Path", u.path)) }
+        if let u = model.infoURL {
+            if let (sheet, t) = CueTrackRef.resolve(u) {
+                r.append(("Cue Sheet", sheet.url.lastPathComponent))
+                r.append(("Range", Format.duration(t.start) + " – " + (t.end.map(Format.duration) ?? "end")))
+            }
+            r.append(("Path", CueTrackRef.audioFile(u).path))
+        }
         return r
     }
 }
@@ -380,7 +386,7 @@ struct QueueTab: View {
         .contextMenu {
             Button("Play") { player.jump(toQueueIndex: i) }
             Button("Remove from Queue") { player.removeFromQueue(at: i) }.disabled(current)
-            Button("Show in Finder") { NSWorkspace.shared.activateFileViewerSelecting([u]) }
+            Button("Show in Finder") { NSWorkspace.shared.activateFileViewerSelecting([CueTrackRef.audioFile(u)]) }
         }
     }
 }

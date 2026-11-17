@@ -18,6 +18,7 @@ final class MainViewController: NSViewController, NSTextFieldDelegate, NSSplitVi
     private let shortcutOverlay = ShortcutOverlay()
     private lazy var karaoke = KaraokeOverlay(inspector: inspector, player: app.player)
     private let commandHold = CommandHoldDetector()
+    private lazy var fileActions = FileActions(app: app, browser: browser, inspector: inspector)
     private let router = KeyRouter()
 
     private let split = ThemedSplitView()
@@ -335,9 +336,18 @@ final class MainViewController: NSViewController, NSTextFieldDelegate, NSSplitVi
             for (i, c) in actions.enumerated() {
                 DispatchQueue.main.asyncAfter(deadline: .now() + 1 + Double(i) * Double(ProcessInfo.processInfo.environment["KVEIKUR_SNAPSHOT_STEP"] ?? "0.4")!) { [weak self] in self?.perform(c) }
             }
+            let fileAction = ProcessInfo.processInfo.environment["KVEIKUR_SNAPSHOT_FILE"]
+            if let a = fileAction {
+                DispatchQueue.main.asyncAfter(deadline: .now() + 1.2 + Double(actions.count) * 0.4) { [weak self] in
+                    let item = NSMenuItem()
+                    item.representedObject = a
+                    self?.fileMenu(item)
+                }
+            }
             DispatchQueue.main.asyncAfter(deadline: .now() + 2 + Double(actions.count) * 0.4) { [weak self] in
                 let named = ProcessInfo.processInfo.environment["KVEIKUR_SNAPSHOT_WINDOW"]
-                let target = named.flatMap { n in NSApp.windows.first { $0.title == n }?.contentView } ?? self?.view
+                let sheet = fileAction != nil ? self?.view.window?.attachedSheet?.contentView : nil
+                let target = sheet ?? named.flatMap { n in NSApp.windows.first { $0.title == n }?.contentView } ?? self?.view
                 guard let v = target, let rep = v.bitmapImageRepForCachingDisplay(in: v.bounds) else { return }
                 v.cacheDisplay(in: v.bounds, to: rep)
                 try? rep.representation(using: .png, properties: [:])?.write(to: URL(fileURLWithPath: path))
@@ -628,10 +638,10 @@ final class MainViewController: NSViewController, NSTextFieldDelegate, NSSplitVi
             inspector.tab = .lyrics
             inspector.fetchOnline()
         case .revealInFinder:
-            let urls = browser.targets().compactMap(\.url)
+            let urls = Array(Set(browser.targets().compactMap(\.url).map(CueTrackRef.audioFile)))
             if !urls.isEmpty { NSWorkspace.shared.activateFileViewerSelecting(urls) }
         case .copyPath:
-            let paths = browser.targets().compactMap { $0.url?.path }
+            let paths = browser.targets().compactMap { $0.url.map(CueTrackRef.audioFile)?.path }
             NSPasteboard.general.clearContents()
             NSPasteboard.general.setString(paths.joined(separator: "\n"), forType: .string)
         case .showQueue: openQueue()
@@ -772,12 +782,44 @@ final class MainViewController: NSViewController, NSTextFieldDelegate, NSSplitVi
         }
         add("Reveal in Finder", .revealInFinder)
         add("Copy Path", .copyPath)
+
+        let targets = browser.targets()
+        let modifiable = targets.filter(FileActions.canModify)
+        func file(_ title: String, _ action: String, color: NSColor? = nil) {
+            let item = NSMenuItem(title: title, action: #selector(fileMenu(_:)), keyEquivalent: "")
+            item.target = self
+            item.representedObject = action
+            if let color { item.attributedTitle = NSAttributedString(string: title, attributes: [.foregroundColor: color]) }
+            menu.addItem(item)
+        }
+        if targets.contains(where: { $0.kind == .track || $0.kind == .folder || $0.kind == .playlist }) || !modifiable.isEmpty {
+            menu.addItem(.separator())
+        }
+        if targets.contains(where: { $0.kind == .track || $0.kind == .folder || $0.kind == .playlist }) {
+            file(targets.count == 1 && targets[0].kind == .track ? "Edit Tags…" : "Edit Tags of Selection…", "tags")
+        }
+        if targets.count == 1, FileActions.canModify(targets[0]) { file("Rename…", "rename") }
+        if !modifiable.isEmpty {
+            file(modifiable.count == 1 ? "Move to Trash…" : "Move \(modifiable.count) Items to Trash…", "trash", color: .systemRed)
+        }
         return menu
     }
 
     @objc private func menuCommand(_ sender: NSMenuItem) {
         guard let raw = sender.representedObject as? String, let c = Command(rawValue: raw) else { return }
         perform(c)
+    }
+
+    @objc private func fileMenu(_ sender: NSMenuItem) {
+        guard let action = sender.representedObject as? String else { return }
+        fileActions.window = view.window
+        let targets = browser.targets()
+        switch action {
+        case "tags": fileActions.editTags(targets)
+        case "rename": if let e = targets.first { fileActions.rename(e) }
+        case "trash": fileActions.trash(targets)
+        default: break
+        }
     }
 
     // MARK: Palettes

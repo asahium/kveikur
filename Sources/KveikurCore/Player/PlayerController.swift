@@ -196,6 +196,47 @@ public final class PlayerController: ObservableObject, PlaybackEngineDelegate {
         updateNext()
     }
 
+    /// Follows files that were renamed (`transform` returns the new URL) or deleted (returns nil).
+    /// A deleted current track stops playback and the next surviving one is loaded.
+    public func remapQueue(_ transform: (URL) -> URL?) {
+        let mapped = queue.map(transform)
+        guard mapped != queue.map(Optional.some) else { return }
+        var remap: [Int: Int] = [:]
+        var fresh: [URL] = []
+        for (i, u) in mapped.enumerated() {
+            guard let u else { continue }
+            remap[i] = fresh.count
+            fresh.append(u)
+        }
+        guard !fresh.isEmpty else { clearQueue(); return }
+        let old = index
+        queue = fresh
+        order = order.compactMap { remap[$0] }
+        if let o = old {
+            if let n = remap[o] {
+                index = n
+                if startedURL != nil { startedURL = fresh[n] }
+            } else {
+                let after = (o + 1..<mapped.count).first { remap[$0] != nil } ?? (0..<o).last { remap[$0] != nil }
+                index = after.flatMap { remap[$0] }
+                engine.stop()
+                startedURL = nil
+                isPlaying = false
+                stopTicker()
+                clock.time = 0
+                if let u = currentURL { loadMetadata(u) }
+            }
+        }
+        orderPos = index.flatMap { order.firstIndex(of: $0) } ?? 0
+        updateNext()
+        updateNowPlaying()
+    }
+
+    /// Tags of the loaded track changed on disk.
+    public func reloadCurrentMetadata() {
+        if let u = currentURL { loadMetadata(u) }
+    }
+
     /// Live analysis tap on decoded audio; nil removes it.
     public func setAnalysisTap(_ handler: (@Sendable (AVAudioPCMBuffer) -> Void)?) {
         engine.setTap(handler)
@@ -258,8 +299,7 @@ public final class PlayerController: ObservableObject, PlaybackEngineDelegate {
 
     /// Loads the queue and track without starting playback; play resumes from the saved position.
     public func restore(_ s: PlayerSnapshot) {
-        let fm = FileManager.default
-        let kept = s.queue.enumerated().filter { fm.fileExists(atPath: $0.element) }
+        let kept = s.queue.enumerated().filter { CueTrackRef.exists(URL(fileURLWithPath: $0.element)) }
         guard !kept.isEmpty else { return }
         queue = kept.map { URL(fileURLWithPath: $0.element) }
         index = s.index.flatMap { i in kept.firstIndex { $0.offset == i } } ?? 0

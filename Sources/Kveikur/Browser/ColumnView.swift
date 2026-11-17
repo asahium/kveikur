@@ -209,7 +209,7 @@ final class ColumnController: NSObject, NSTableViewDataSource, NSTableViewDelega
 
     func tableView(_ tableView: NSTableView, pasteboardWriterForRow row: Int) -> NSPasteboardWriting? {
         guard let u = entries[row].url else { return nil }
-        return u as NSURL
+        return CueTrackRef.audioFile(u) as NSURL
     }
 }
 

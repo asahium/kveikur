@@ -71,6 +71,20 @@ public final class MetadataStore: @unchecked Sendable {
         }
     }
 
+    public func forget(_ paths: [String]) {
+        for p in paths { memory.removeObject(forKey: p.pathKey as NSString) }
+    }
+
+    /// Re-reads a file after it changed on disk and updates the cache and the index.
+    @discardableResult
+    public func refresh(_ url: URL) async -> TrackMetadata? {
+        forget([url.path])
+        guard let m = await MetadataReader.read(url) else { return nil }
+        remember(m)
+        library.upsert([m])
+        return m
+    }
+
     public func metadata(for url: URL) async -> TrackMetadata? {
         let path = url.path
         if let m = cached(path) { return m }

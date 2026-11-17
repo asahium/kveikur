@@ -187,7 +187,7 @@ struct OutputTab: View {
         r.append(("Duration", Format.duration(m.duration)))
         if m.bitrate > 0 { r.append(("Bitrate", "\(m.bitrate) kbps")) }
         r.append(("File Size", Format.bytes(m.size)))
-        r.append(("Path", m.path))
+        r.append(("Path", CueTrackRef.audioFile(m.url).path))
         return r
     }
 }

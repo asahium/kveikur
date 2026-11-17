@@ -28,11 +28,15 @@ public final class ArtworkCache: @unchecked Sendable {
         if let img = cached(key) { return img }
         if isMiss(key) { return nil }
         var data = await MetadataReader.embeddedArtwork(url)
-        if data == nil { data = folderImageData(url.deletingLastPathComponent()) }
+        let file = CueTrackRef.audioFile(url)
+        if data == nil { data = sameNameImage(file) ?? folderImageData(file.deletingLastPathComponent()) }
         return store(data, key: key, maxPixel: maxPixel)
     }
 
     public func image(forFolder url: URL, maxPixel: Int = 600) async -> CGImage? {
+        if url.pathExtension.lowercased() == "cue", let t = CueTrackRef.sheet(url)?.tracks.first {
+            return await image(forTrack: CueTrackRef.url(url, t.number), maxPixel: maxPixel)
+        }
         let key = cacheKey(url, maxPixel)
         if let img = cached(key) { return img }
         if isMiss(key) { return nil }
@@ -84,6 +88,15 @@ public final class ArtworkCache: @unchecked Sendable {
             CGImageDestinationFinalize(dest)
         }
         return thumb
+    }
+
+    /// "Album.png" next to "Album.flac", as rippers save it for disc images.
+    private func sameNameImage(_ file: URL) -> Data? {
+        let base = file.deletingPathExtension()
+        for ext in ["jpg", "jpeg", "png"] {
+            if let d = try? Data(contentsOf: base.appendingPathExtension(ext)) { return d }
+        }
+        return nil
     }
 
     private func folderImageData(_ folder: URL) -> Data? {

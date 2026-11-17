@@ -4,6 +4,7 @@ import Foundation
 
 public enum MetadataReader {
     public static func read(_ url: URL) async -> TrackMetadata? {
+        if CueTrackRef.isCue(url) { return await readCue(url) }
         guard let attrs = try? FileManager.default.attributesOfItem(atPath: url.path) else { return nil }
         var m = TrackMetadata(
             path: url.path,
@@ -17,20 +18,68 @@ public enum MetadataReader {
         return m
     }
 
+    /// Image tags describe the whole disc, so cue tracks have no embedded lyrics.
     public static func embeddedLyrics(_ url: URL) async -> String? {
+        guard !CueTrackRef.isCue(url) else { return nil }
         var scratch = TrackMetadata(path: url.path, mtime: 0, size: 0)
         return await tags(url, wantPicture: false, metadata: &scratch).lyrics
     }
 
     /// Every tag the file carries, with Vorbis-style lowercase keys ("label", "isrc", "replaygain_track_gain", ...).
+    /// For cue tracks: the image's disc-level tags with the sheet's track fields on top; image track gain is dropped.
     public static func allTags(_ url: URL) async -> [String: String] {
-        var scratch = TrackMetadata(path: url.path, mtime: 0, size: 0)
-        return await tags(url, wantPicture: false, metadata: &scratch).values
+        let file = CueTrackRef.audioFile(url)
+        var scratch = TrackMetadata(path: file.path, mtime: 0, size: 0)
+        var values = await tags(file, wantPicture: false, metadata: &scratch).values
+        if let (sheet, t) = CueTrackRef.resolve(url) {
+            values = values.filter { !$0.key.hasPrefix("replaygain_track") && $0.key != "title" && $0.key != "tracknumber" }
+            values["title"] = t.title
+            values["artist"] = t.performer ?? sheet.performer ?? values["artist"]
+            values["tracknumber"] = "\(t.number)"
+            values["isrc"] = t.isrc ?? values["isrc"]
+            values["cuesheet"] = sheet.url.lastPathComponent
+        }
+        return values
     }
 
     public static func embeddedArtwork(_ url: URL) async -> Data? {
-        var scratch = TrackMetadata(path: url.path, mtime: 0, size: 0)
-        return await tags(url, wantPicture: true, metadata: &scratch).picture
+        let file = CueTrackRef.audioFile(url)
+        var scratch = TrackMetadata(path: file.path, mtime: 0, size: 0)
+        return await tags(file, wantPicture: true, metadata: &scratch).picture
+    }
+
+    /// Stamp of a cue track: newest of sheet and image, so editing either re-reads it.
+    public static func cueStamp(_ url: URL) -> (mtime: Double, size: Int64)? {
+        guard let (sheet, t) = CueTrackRef.resolve(url) else { return nil }
+        let fm = FileManager.default
+        guard let a = try? fm.attributesOfItem(atPath: t.file.path),
+              let c = try? fm.attributesOfItem(atPath: sheet.url.path) else { return nil }
+        let m = max((a[.modificationDate] as? Date)?.timeIntervalSince1970 ?? 0, (c[.modificationDate] as? Date)?.timeIntervalSince1970 ?? 0)
+        return (m, (a[.size] as? NSNumber)?.int64Value ?? 0)
+    }
+
+    private static func readCue(_ url: URL) async -> TrackMetadata? {
+        guard let (sheet, t) = CueTrackRef.resolve(url), let stamp = cueStamp(url) else { return nil }
+        var m = TrackMetadata(path: url.path, mtime: stamp.mtime, size: stamp.size)
+        readTechnical(t.file, into: &m)
+        var image = TrackMetadata(path: t.file.path, mtime: 0, size: 0)
+        let bag = await tags(t.file, wantPicture: false, metadata: &image)
+        if let si = image.format { m.format = si }
+        let total = image.duration > 0 ? image.duration : m.duration
+        m.duration = max(0, (t.end ?? total) - t.start)
+        bag.apply(to: &image)
+        m.title = t.title ?? "Track \(t.number)"
+        m.artist = t.performer ?? sheet.performer ?? image.artist
+        m.album = sheet.title ?? image.album
+        m.albumArtist = sheet.performer ?? image.albumArtist
+        m.genre = sheet.genre ?? image.genre
+        m.composer = t.songwriter ?? image.composer
+        m.year = sheet.date ?? image.year
+        m.trackNumber = t.number
+        m.trackTotal = sheet.tracks.filter { $0.file == t.file }.count
+        m.discNumber = sheet.disc ?? image.discNumber
+        m.discTotal = sheet.discTotal ?? image.discTotal
+        return m
     }
 
     // MARK: Technical info (Core Audio)

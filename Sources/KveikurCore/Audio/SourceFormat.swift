@@ -91,7 +91,7 @@ public enum ContainerSniffer {
 
     /// Detects the container from file contents, not the extension.
     public static func sniff(_ url: URL) -> Kind {
-        guard let h = try? FileHandle(forReadingFrom: url) else { return .unknown }
+        guard let h = try? FileHandle(forReadingFrom: CueTrackRef.audioFile(url)) else { return .unknown }
         defer { try? h.close() }
         guard let d = try? h.read(upToCount: 16), d.count >= 4 else { return .unknown }
         let b = [UInt8](d)

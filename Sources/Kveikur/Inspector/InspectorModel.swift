@@ -71,6 +71,12 @@ final class InspectorModel: ObservableObject {
 
     // MARK: Info
 
+    func reloadInfo() {
+        let u = infoURL
+        infoURL = nil
+        showInfo(u)
+    }
+
     func showInfo(_ u: URL?) {
         guard u != infoURL else { return }
         infoURL = u

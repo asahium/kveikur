@@ -541,3 +541,221 @@ final class ScrobbleTests: XCTestCase {
         XCTAssertEqual(afterAuthError, 0, "auth errors drop instead of retrying forever")
     }
 }
+
+final class TagWriterTests: XCTestCase {
+    private func encoded(_ ext: String, _ format: AudioFormatID) throws -> URL {
+        let url = FileManager.default.temporaryDirectory.appendingPathComponent("tags-\(UUID()).\(ext)")
+        let pcm = AVAudioFormat(standardFormatWithSampleRate: 44100, channels: 2)!
+        try autoreleasepool {
+            var settings: [String: Any] = [AVFormatIDKey: format, AVSampleRateKey: 44100.0, AVNumberOfChannelsKey: 2]
+            if format == kAudioFormatFLAC { settings[AVLinearPCMBitDepthKey] = 16 }
+            let file = try AVAudioFile(forWriting: url, settings: settings)
+            let buf = AVAudioPCMBuffer(pcmFormat: pcm, frameCapacity: 44100)!
+            buf.frameLength = buf.frameCapacity
+            for i in 0..<Int(buf.frameLength) {
+                let v = Float(0.3 * sin(2 * Double.pi * 440 * Double(i) / 44100))
+                buf.floatChannelData![0][i] = v
+                buf.floatChannelData![1][i] = v
+            }
+            try file.write(from: buf)
+        }
+        return url
+    }
+
+    private func audioFrames(_ url: URL) throws -> AVAudioFramePosition {
+        try AVAudioFile(forReading: url).length
+    }
+
+    func testFLACRoundTrip() async throws {
+        let url = try encoded("flac", kAudioFormatFLAC)
+        let frames = try audioFrames(url)
+        var e = TagEdit()
+        e[.title] = "Brennisteinn"
+        e[.artist] = "Sigur Rós"
+        e[.year] = "2013"
+        e[.track] = "1"
+        e[.trackTotal] = "9"
+        try await TagWriter.write(e, to: url)
+        var m = await MetadataReader.read(url)
+        XCTAssertEqual(m?.title, "Brennisteinn")
+        XCTAssertEqual(m?.artist, "Sigur Rós")
+        XCTAssertEqual(m?.year, "2013")
+        XCTAssertEqual(m?.trackNumber, 1)
+        XCTAssertEqual(m?.trackTotal, 9)
+        XCTAssertEqual(try audioFrames(url), frames)
+
+        let size = try FileManager.default.attributesOfItem(atPath: url.path)[.size] as! Int
+        var e2 = TagEdit()
+        e2[.title] = "Hrafntinna"
+        e2[.artist] = ""
+        try await TagWriter.write(e2, to: url)
+        m = await MetadataReader.read(url)
+        XCTAssertEqual(m?.title, "Hrafntinna")
+        XCTAssertNil(m?.artist)
+        XCTAssertEqual(m?.year, "2013")
+        XCTAssertEqual(try FileManager.default.attributesOfItem(atPath: url.path)[.size] as! Int, size, "fits in padding")
+        XCTAssertEqual(try audioFrames(url), frames)
+    }
+
+    func testMP4RoundTrip() async throws {
+        let url = try encoded("m4a", kAudioFormatMPEG4AAC)
+        var e = TagEdit()
+        e[.title] = "Ísjaki"
+        e[.album] = "Kveikur"
+        e[.track] = "3"
+        e[.trackTotal] = "9"
+        try await TagWriter.write(e, to: url)
+        let m = await MetadataReader.read(url)
+        XCTAssertEqual(m?.title, "Ísjaki")
+        XCTAssertEqual(m?.album, "Kveikur")
+        XCTAssertEqual(m?.trackNumber, 3)
+        XCTAssertEqual(m?.trackTotal, 9)
+        XCTAssertGreaterThan(m?.duration ?? 0, 0.9)
+    }
+
+    func testID3InPlaceAndGrow() throws {
+        let url = FileManager.default.temporaryDirectory.appendingPathComponent("id3-\(UUID()).mp3")
+        var file = ID3Writer.header(major: 3, size: 64)
+        let old = ID3Writer.textFrame("TIT2", "Old", major: 3) + ID3Writer.textFrame("TXXX", "\0keep", major: 3)
+        file.append(old)
+        file.append(Data(count: 64 - old.count))
+        let audio = Data((0..<4096).map { UInt8($0 & 0xFF) })
+        file.append(audio)
+        try file.write(to: url)
+
+        var e = TagEdit()
+        e[.title] = "街のどこかで"
+        try ID3Writer.write(e, to: url)
+        var data = try Data(contentsOf: url)
+        XCTAssertEqual(data.count, file.count, "rewritten in place")
+        var tag = try XCTUnwrap(ID3Writer.parse(data))
+        XCTAssertEqual(tag.frames.map(\.id), ["TXXX", "TIT2"])
+        XCTAssertEqual(data.suffix(audio.count), audio)
+
+        e = TagEdit()
+        e[.album] = String(repeating: "Ágætis byrjun ", count: 10)
+        e[.track] = "4"
+        e[.trackTotal] = "10"
+        try ID3Writer.write(e, to: url)
+        data = try Data(contentsOf: url)
+        tag = try XCTUnwrap(ID3Writer.parse(data))
+        XCTAssertEqual(Set(tag.frames.map(\.id)), ["TXXX", "TIT2", "TALB", "TRCK"])
+        XCTAssertEqual(data.count, tag.totalSize + audio.count)
+        XCTAssertEqual(data.suffix(audio.count), audio)
+        let trck = try XCTUnwrap(tag.frames.first { $0.id == "TRCK" })
+        XCTAssertEqual(String(decoding: trck.raw.dropFirst(11), as: UTF8.self), "4/10")
+    }
+
+    func testRenameMovesSidecars() throws {
+        let dir = FileManager.default.temporaryDirectory.appendingPathComponent("ren-\(UUID())")
+        try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+        let track = dir.appendingPathComponent("01 a.flac")
+        try Data().write(to: track)
+        try Data().write(to: dir.appendingPathComponent("01 a.lrc"))
+        let moves = try FileOperations.rename(track, to: "01 b.flac")
+        XCTAssertEqual(moves.map(\.1.lastPathComponent), ["01 b.flac", "01 b.lrc"])
+        XCTAssertThrowsError(try FileOperations.rename(dir.appendingPathComponent("01 b.flac"), to: "x/y"))
+        XCTAssertEqual(FileOperations.remap(URL(fileURLWithPath: dir.path + "/01 a.flac"), moves)?.lastPathComponent, "01 b.flac")
+        XCTAssertEqual(FileOperations.remap(URL(fileURLWithPath: "/elsewhere/x.flac"), moves), nil)
+    }
+}
+
+final class CueTests: XCTestCase {
+    private func image(seconds: Double, in dir: URL, name: String) throws -> URL {
+        let url = dir.appendingPathComponent(name)
+        let format = AVAudioFormat(standardFormatWithSampleRate: 44100, channels: 2)!
+        try autoreleasepool {
+            let file = try AVAudioFile(forWriting: url, settings: [
+                AVFormatIDKey: kAudioFormatLinearPCM, AVSampleRateKey: 44100.0, AVNumberOfChannelsKey: 2,
+                AVLinearPCMBitDepthKey: 16, AVLinearPCMIsFloatKey: false,
+            ])
+            let buf = AVAudioPCMBuffer(pcmFormat: format, frameCapacity: AVAudioFrameCount(44100 * seconds))!
+            buf.frameLength = buf.frameCapacity
+            try file.write(from: buf)
+        }
+        return url
+    }
+
+    func testParseTokensTimesAndEncodings() throws {
+        XCTAssertEqual(CueSheet.tokens(#"  TITLE "Ágætis byrjun" "#), ["TITLE", "Ágætis byrjun"])
+        XCTAssertEqual(CueSheet.tokens(#"FILE "a b.wav" WAVE"#), ["FILE", "a b.wav", "WAVE"])
+        XCTAssertEqual(CueSheet.time("01:02:37")!, 62.4933, accuracy: 0.001)
+        let cyr = "PERFORMER \"Кино\"\r\nTITLE \"Группа крови\"\r\n"
+        XCTAssertEqual(CueSheet.decode(cyr.data(using: .windowsCP1251)!), cyr)
+        XCTAssertEqual(CueSheet.decode(Data([0xEF, 0xBB, 0xBF]) + Data("TITLE \"x\"".utf8)), "TITLE \"x\"")
+    }
+
+    func testSheetSplitsImageAndTracksPlayAsSegments() async throws {
+        let dir = FileManager.default.temporaryDirectory.appendingPathComponent("cue-\(UUID())")
+        try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+        let img = try image(seconds: 6, in: dir, name: "Sigur Rós - Rarities.wav")
+        let loose = try image(seconds: 1, in: dir, name: "bonus.wav")
+        let cue = dir.appendingPathComponent("Sigur Rós - Rarities.cue")
+        try """
+        REM GENRE Rock\r
+        REM DATE 2019\r
+        PERFORMER "Sigur Ros"\r
+        TITLE "Rarities"\r
+        FILE "Sigur Ros - Rarities.flac" WAVE\r
+          TRACK 01 AUDIO\r
+            TITLE "One"\r
+            INDEX 01 00:00:00\r
+          TRACK 02 AUDIO\r
+            TITLE "Two"\r
+            PERFORMER "Guest"\r
+            INDEX 00 00:01:50\r
+            INDEX 01 00:02:00\r
+        """.write(to: cue, atomically: true, encoding: .utf8)
+
+        let sheet = try XCTUnwrap(CueTrackRef.sheet(cue))
+        XCTAssertEqual(sheet.splitFiles.map(\.lastPathComponent), [img.lastPathComponent], "accent-stripped name resolves")
+        XCTAssertEqual(sheet.tracks.map(\.start), [0, 2])
+
+        let t2 = CueTrackRef.url(cue, 2)
+        let read = await MetadataReader.read(t2)
+        let m = try XCTUnwrap(read)
+        XCTAssertEqual(m.title, "Two")
+        XCTAssertEqual(m.artist, "Guest")
+        XCTAssertEqual(m.album, "Rarities")
+        XCTAssertEqual(m.year, "2019")
+        XCTAssertEqual(m.trackNumber, 2)
+        XCTAssertEqual(m.trackTotal, 2)
+        XCTAssertEqual(m.duration, 4, accuracy: 0.01)
+        let m1 = await MetadataReader.read(CueTrackRef.url(cue, 1))
+        XCTAssertEqual(m1?.duration ?? 0, 2, accuracy: 0.01)
+
+        let d = try DecoderFactory.makeDecoder(for: t2)
+        XCTAssertEqual(d.lengthFrames, 4 * 44100)
+        let buf = AVAudioPCMBuffer(pcmFormat: d.processingFormat, frameCapacity: 3 * 44100)!
+        var total: Int64 = 0
+        while try d.read(into: buf) { total += Int64(buf.frameLength) }
+        XCTAssertEqual(total, 4 * 44100)
+        try d.seek(to: 44100)
+        XCTAssertEqual(d.positionFrames, 44100)
+
+        let walk = CueFolders.expand(audio: [img, loose], cues: [cue])
+        XCTAssertEqual(Set(walk.map(\.lastPathComponent)), ["01", "02", "bonus.wav"])
+        XCTAssertTrue(CueTrackRef.exists(t2))
+        XCTAssertFalse(CueTrackRef.exists(CueTrackRef.url(cue, 3)))
+        XCTAssertEqual(CueTrackRef.audioFile(t2).path, img.path)
+        XCTAssertEqual(CueFolders.listing(of: t2).path, dir.path)
+        XCTAssertFalse(TagWriter.canWrite(t2))
+    }
+
+    func testPerFileSheetsAreIgnored() throws {
+        let dir = FileManager.default.temporaryDirectory.appendingPathComponent("cue-\(UUID())")
+        try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+        _ = try image(seconds: 1, in: dir, name: "01. Fuel.wav")
+        _ = try image(seconds: 1, in: dir, name: "02. Memory.wav")
+        let cue = dir.appendingPathComponent("Reload.cue")
+        try """
+        FILE "01. Fuel.wav" WAVE
+          TRACK 01 AUDIO
+            INDEX 01 00:00:00
+        FILE "02. Memory.wav" WAVE
+          TRACK 02 AUDIO
+            INDEX 01 00:00:00
+        """.write(to: cue, atomically: true, encoding: .utf8)
+        XCTAssertNil(CueSheet.load(cue))
+    }
+}

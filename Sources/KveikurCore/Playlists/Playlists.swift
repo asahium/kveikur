@@ -97,6 +97,21 @@ public final class PlaylistStore: @unchecked Sendable {
         return url
     }
 
+    /// Rewrites entries that point at renamed files or folders; returns the playlists that changed.
+    @discardableResult
+    public func followMoves(_ moves: [(URL, URL)]) -> [URL] {
+        var changed: [URL] = []
+        for p in playlists() {
+            var e = entries(p)
+            var dirty = false
+            for i in e.indices {
+                if let u = FileOperations.remap(e[i].url, moves) { e[i].url = u; dirty = true }
+            }
+            if dirty, (try? write(e, to: p)) != nil { changed.append(p) }
+        }
+        return changed
+    }
+
     public func append(_ new: [PlaylistEntry], to playlist: URL) throws {
         try write(entries(playlist) + new, to: playlist)
     }

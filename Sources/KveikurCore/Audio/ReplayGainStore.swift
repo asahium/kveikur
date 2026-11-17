@@ -99,7 +99,8 @@ public final class ReplayGainStore: @unchecked Sendable {
     }
 
     private static func mtime(_ path: String) -> Double {
-        ((try? FileManager.default.attributesOfItem(atPath: path))?[.modificationDate] as? Date)?.timeIntervalSince1970 ?? 0
+        let file = CueTrackRef.audioFile(URL(fileURLWithPath: path)).path
+        return ((try? FileManager.default.attributesOfItem(atPath: file))?[.modificationDate] as? Date)?.timeIntervalSince1970 ?? 0
     }
 
     /// Integrated loudness and sample peak; gain is relative to -18 LUFS.
