@@ -336,6 +336,11 @@ final class MainViewController: NSViewController, NSTextFieldDelegate, NSSplitVi
             for (i, c) in actions.enumerated() {
                 DispatchQueue.main.asyncAfter(deadline: .now() + 1 + Double(i) * Double(ProcessInfo.processInfo.environment["KVEIKUR_SNAPSHOT_STEP"] ?? "0.4")!) { [weak self] in self?.perform(c) }
             }
+            if let size = ProcessInfo.processInfo.environment["KVEIKUR_SNAPSHOT_SIZE"]?.split(separator: "x").compactMap({ Double($0) }),
+               size.count == 2, let w = view.window {
+                w.setFrame(NSRect(origin: w.frame.origin, size: NSSize(width: size[0], height: size[1])), display: true)
+            }
+            NSApp.activate()
             let fileAction = ProcessInfo.processInfo.environment["KVEIKUR_SNAPSHOT_FILE"]
             if let a = fileAction {
                 DispatchQueue.main.asyncAfter(deadline: .now() + 1.2 + Double(actions.count) * 0.4) { [weak self] in
@@ -346,14 +351,27 @@ final class MainViewController: NSViewController, NSTextFieldDelegate, NSSplitVi
             }
             DispatchQueue.main.asyncAfter(deadline: .now() + 2 + Double(actions.count) * 0.4) { [weak self] in
                 let named = ProcessInfo.processInfo.environment["KVEIKUR_SNAPSHOT_WINDOW"]
-                let sheet = fileAction != nil ? self?.view.window?.attachedSheet?.contentView : nil
-                let target = sheet ?? named.flatMap { n in NSApp.windows.first { $0.title == n }?.contentView } ?? self?.view
-                guard let v = target, let rep = v.bitmapImageRepForCachingDisplay(in: v.bounds) else { return }
-                v.cacheDisplay(in: v.bounds, to: rep)
-                try? rep.representation(using: .png, properties: [:])?.write(to: URL(fileURLWithPath: path))
+                let sheet = fileAction != nil ? self?.view.window?.attachedSheet : nil
+                guard let w = sheet ?? named.flatMap({ n in NSApp.windows.first { $0.title == n } }) ?? self?.view.window,
+                      let v = w.contentView else { return }
+                var rep = Self.windowImage(w).map(NSBitmapImageRep.init(cgImage:))
+                if rep == nil, let r = v.bitmapImageRepForCachingDisplay(in: v.bounds) {
+                    v.cacheDisplay(in: v.bounds, to: r)
+                    rep = r
+                }
+                try? rep?.representation(using: .png, properties: [:])?.write(to: URL(fileURLWithPath: path))
             }
         }
         view.window?.makeFirstResponder(currentCol.table)
+    }
+
+    /// The window as the window server draws it; `cacheDisplay` drops layer backgrounds.
+    /// `CGWindowListCreateImage` is unavailable in the macOS 15 SDK but still works for own windows.
+    private static func windowImage(_ w: NSWindow) -> CGImage? {
+        typealias Capture = @convention(c) (CGRect, UInt32, UInt32, UInt32) -> Unmanaged<CGImage>?
+        guard let sym = dlsym(dlopen(nil, RTLD_NOW), "CGWindowListCreateImage") else { return nil }
+        let capture = unsafeBitCast(sym, to: Capture.self)
+        return capture(.null, 1 << 3, UInt32(w.windowNumber), 1 << 0 | 1 << 3)?.takeRetainedValue()
     }
 
     private func setInspectorHidden(_ hidden: Bool) {
