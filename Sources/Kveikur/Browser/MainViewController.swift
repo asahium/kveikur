@@ -350,7 +350,8 @@ final class MainViewController: NSViewController, NSTextFieldDelegate, NSSplitVi
                     self?.fileMenu(item)
                 }
             }
-            DispatchQueue.main.asyncAfter(deadline: .now() + 2 + Double(actions.count) * 0.4) { [weak self] in
+            let delay = Double(ProcessInfo.processInfo.environment["KVEIKUR_SNAPSHOT_DELAY"] ?? "2") ?? 2
+            DispatchQueue.main.asyncAfter(deadline: .now() + delay + Double(actions.count) * 0.4) { [weak self] in
                 let named = ProcessInfo.processInfo.environment["KVEIKUR_SNAPSHOT_WINDOW"]
                 let sheet = fileAction != nil ? self?.view.window?.attachedSheet : nil
                 guard let w = sheet ?? named.flatMap({ n in NSApp.windows.first { $0.title == n } }) ?? self?.view.window,
@@ -685,6 +686,8 @@ final class MainViewController: NSViewController, NSTextFieldDelegate, NSSplitVi
             NSApp.sendAction(#selector(AppDelegate.showEqualizer), to: nil, from: nil)
         case .duplicates:
             NSApp.sendAction(#selector(AppDelegate.showDuplicates), to: nil, from: nil)
+        case .missingAlbums:
+            NSApp.sendAction(#selector(AppDelegate.showMissingAlbums), to: nil, from: nil)
         case .statistics:
             NSApp.sendAction(#selector(AppDelegate.showStatistics), to: nil, from: nil)
         case .toggleEQ: player.equalizer.enabled.toggle()

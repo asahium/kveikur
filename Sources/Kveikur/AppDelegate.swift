@@ -11,6 +11,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, NSMe
     private var equalizerWindow: NSWindow?
     private var duplicatesWindow: NSWindow?
     private var statisticsWindow: NSWindow?
+    private var missingWindow: NSWindow?
 
     func applicationDidFinishLaunching(_ notification: Notification) {
         LegacyMigration.run()
@@ -92,6 +93,16 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, NSMe
         duplicatesWindow?.makeKeyAndOrderFront(nil)
     }
 
+    @objc func showMissingAlbums() {
+        if missingWindow == nil {
+            let m = MissingAlbumsModel(app: model)
+            m.onShow = { [weak self] u in self?.showInBrowser(u) }
+            missingWindow = auxWindow(NSHostingController(rootView: MissingAlbumsView(model: m)), title: "Missing Albums",
+                                      autosave: "KveikurMissingAlbums")
+        }
+        missingWindow?.makeKeyAndOrderFront(nil)
+    }
+
     @objc func showStatistics() {
         if statisticsWindow == nil {
             let m = StatisticsModel(app: model)
@@ -142,6 +153,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, NSMe
         add(file, "Add Music Folder…", .addFolder)
         add(file, "Rescan Library", .rescan)
         add(file, "Find Duplicates…", .duplicates)
+        add(file, "Missing Albums…", .missingAlbums)
         add(file, "Listening Statistics", .statistics)
         file.addItem(.separator())
         add(file, "New Playlist from Selection…", .newPlaylist)

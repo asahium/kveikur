@@ -825,7 +825,7 @@ final class HistoryTests: XCTestCase {
         XCTAssertEqual(all.topArtists.first?.plays, 3)
         XCTAssertEqual(all.topTracks.first?.key, a.path)
 
-        let month = store.stats(since: now.addingTimeInterval(-86_400 * 30))
+        let month = store.stats(since: Calendar.current.date(byAdding: .day, value: -30, to: now))
         XCTAssertEqual(month.plays, 2)
         XCTAssertEqual(month.days.count, 31)
         XCTAssertEqual(month.days.last?.seconds, 360)
@@ -896,5 +896,52 @@ final class HistoryImportTests: XCTestCase {
         XCTAssertEqual(s.seconds, 268 * 2)
         XCTAssertEqual(store.playCount(t.path).plays, 2)
         XCTAssertEqual(store.smartList(.mostPlayed), [t.path])
+    }
+}
+
+final class DiscographyTests: XCTestCase {
+    private func track(_ path: String, album: String?, artist: String) -> TrackMetadata {
+        var t = TrackMetadata(path: path, mtime: 0, size: 1)
+        t.album = album
+        t.albumArtist = artist
+        return t
+    }
+
+    func testLocalArtistsAndMatching() {
+        let root = URL(fileURLWithPath: "/m")
+        let tracks = [
+            track("/m/Rise Against/2007 - The Sufferer And The Witness (Australian Tour Edition)/01.flac", album: nil, artist: "Rise Against"),
+            track("/m/Lana Del Rey/Born to Die - The Paradise Edition/01.flac", album: "Born to Die – The Paradise Edition", artist: "Lana Del Rey"),
+            track("/m/Metallica/1991 - Black Album/01.flac", album: "Black Album", artist: "Metallica"),
+            track("/m/OST/Dune/01.flac", album: "Dune", artist: "Hans Zimmer"),
+            track("/m/Ed Sheeran/Albums/2014 - x (UK Deluxe Edition)/01.flac", album: nil, artist: "Ed Sheeran"),
+            track("/m/Ed Sheeran/Albums/2017 - Divide (Deluxe Edition)/01.flac", album: nil, artist: "Ed Sheeran"),
+            track("/m/Ed Sheeran/Albums/2023 - - (Deluxe)/01.flac", album: nil, artist: "Ed Sheeran"),
+            track("/m/Childish Gambino/Childish Gambino - Atavista (2024) [24-44,1]/01.flac", album: nil, artist: "Childish Gambino"),
+            track("/m/loose.flac", album: nil, artist: "X"),
+        ]
+        let artists = Discography.localArtists(tracks, roots: [root])
+        XCTAssertEqual(artists.map(\.name), ["Childish Gambino", "Ed Sheeran", "Lana Del Rey", "Metallica", "Rise Against"])
+        func album(_ t: String) -> StudioAlbum { StudioAlbum(id: t, title: t, year: nil) }
+        XCTAssertTrue(artists[4].owns(album("The Sufferer & the Witness")))
+        XCTAssertTrue(artists[2].owns(album("Born to Die")))
+        XCTAssertFalse(artists[2].owns(album("Ultraviolence")))
+        XCTAssertFalse(artists[3].owns(album("Metallica")), "the artist folder itself is not an album")
+        XCTAssertTrue(artists[0].owns(album("Atavista")))
+        for t in ["×", "÷", "−"] { XCTAssertTrue(artists[1].owns(album(t)), t) }
+        XCTAssertFalse(artists[1].owns(album("+")))
+    }
+
+    func testFolderTitle() {
+        XCTAssertEqual(Discography.folderTitle("2013 - Kveikur"), "Kveikur")
+        XCTAssertEqual(Discography.folderTitle("(2002) ()"), "()")
+        XCTAssertEqual(Discography.folderTitle("1999"), "1999")
+    }
+
+    func testPickArtist() {
+        typealias Hit = MusicBrainz.ArtistHit
+        let hits = [Hit(id: "a", name: "Sigur Rós", score: 100, aliases: nil), Hit(id: "b", name: "Sigur", score: 90, aliases: nil)]
+        XCTAssertEqual(MusicBrainz.pick(hits, for: "Sigur Ros").first?.id, "a")
+        XCTAssertTrue(MusicBrainz.pick([Hit(id: "c", name: "Other", score: 70, aliases: nil)], for: "Nobody").isEmpty)
     }
 }

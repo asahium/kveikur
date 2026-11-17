@@ -11,6 +11,7 @@ What it does:
 - **Lyrics.** Uses a `.lrc` file or embedded tags, then LRCLIB or Genius. Synced lines scroll, and there is a full-screen karaoke view.
 - **Tags and files.** Edit tags, rename and move to Trash from the right-click menu only, so no keystroke can delete anything.
 - **Duplicates.** Finds the same album stored twice and marks the copy to keep.
+- **Missing albums.** Lists each artist's studio albums from MusicBrainz that aren't in your folders.
 - **History.** Plays are stored locally. You get statistics, Most/Recently Played playlists, and scrobbling to Last.fm and ListenBrainz.
 - **Restores state.** On launch the folder, cursor, queue and position come back.
 

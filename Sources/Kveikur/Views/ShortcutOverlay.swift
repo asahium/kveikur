@@ -127,7 +127,7 @@ struct ShortcutPanel: View {
             section("Inspector", [.togglePreview, .cycleInspectorTab, .prevInspectorTab, .tabInfo, .tabLyrics,
                                   .tabQueue, .tabAnalysis, .tabOutput, .pinNowPlaying, .fetchLyrics, .karaoke]),
             section("Files & Playlists", [.revealInFinder, .copyPath, .addToPlaylist, .newPlaylist, .removeFromPlaylist,
-                                          .moveEntryDown, .moveEntryUp, .rescan, .addFolder, .duplicates, .statistics, .escape]),
+                                          .moveEntryDown, .moveEntryUp, .rescan, .addFolder, .duplicates, .missingAlbums, .statistics, .escape]),
             Section(title: "App", rows: [
                 Row(title: "Settings", keys: ["⌘,"]),
                 Row(title: "Close window", keys: ["⌘W"]),
