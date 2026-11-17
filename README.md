@@ -31,3 +31,7 @@ make dmg    # build/Kveikur-<version>.dmg
 ```
 
 It needs Xcode 16 or newer and has no dependencies. Pushing a `v*` tag publishes a release.
+
+## License
+
+[MIT](LICENSE)
