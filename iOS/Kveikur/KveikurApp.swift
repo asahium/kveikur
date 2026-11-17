@@ -16,6 +16,7 @@ struct KveikurApp: App {
         }
         .onChange(of: phase) { _, p in
             if p != .active { model.save() }
+            model.player.clockSuspended = p == .background
         }
     }
 }

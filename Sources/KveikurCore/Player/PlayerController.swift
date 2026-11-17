@@ -87,6 +87,17 @@ public final class PlayerController: ObservableObject, PlaybackEngineDelegate {
     private var order: [Int] = []
     private var orderPos = 0
     private var ticker: Timer?
+    /// Nothing on screen reads `clock` (iOS app in the background): skip the 10 Hz ticks while playing.
+    public var clockSuspended = false {
+        didSet {
+            guard clockSuspended != oldValue else { return }
+            if clockSuspended {
+                stopTicker()
+            } else if isPlaying {
+                startTicker()
+            }
+        }
+    }
     private var preferredDeviceUID: String?
     private var startedURL: URL?
     private var interrupted = false
@@ -539,13 +550,14 @@ public final class PlayerController: ObservableObject, PlaybackEngineDelegate {
     // MARK: Clock
 
     private func startTicker() {
-        guard ticker == nil else { return }
+        guard ticker == nil, !clockSuspended else { return }
         ticker = Timer.scheduledTimer(withTimeInterval: 0.1, repeats: true) { [weak self] _ in
             MainActor.assumeIsolated {
                 guard let self else { return }
                 self.clock.time = self.engine.currentTime
             }
         }
+        ticker?.tolerance = 0.02
     }
 
     private func stopTicker() {

@@ -35,6 +35,7 @@ final class MobileModel: ObservableObject {
 
     private let defaults = UserDefaults.standard
     private var accessing: [URL] = []
+    private var lastSaved: Data?
 
     init() {
         let store = (try? LibraryStore())
@@ -48,9 +49,10 @@ final class MobileModel: ObservableObject {
         scrobbler.onListen = { m, at in Task.detached { store.recordPlay(m, at: at) } }
         loadRoots()
         restore()
-        Timer.scheduledTimer(withTimeInterval: 15, repeats: true) { [weak self] _ in
+        let saver = Timer.scheduledTimer(withTimeInterval: 15, repeats: true) { [weak self] _ in
             MainActor.assumeIsolated { self?.save() }
         }
+        saver.tolerance = 5
     }
 
     // MARK: Roots
@@ -169,7 +171,9 @@ final class MobileModel: ObservableObject {
         var s = player.snapshot()
         let docs = Self.documents.standardizedFileURL.path
         s.queue = s.queue.map { $0.hasPrefix(docs + "/") ? Self.documentsToken + $0.dropFirst(docs.count) : $0 }
-        if let data = try? JSONEncoder().encode(s) { defaults.set(data, forKey: "playerState") }
+        guard let data = try? JSONEncoder().encode(s), data != lastSaved else { return }
+        defaults.set(data, forKey: "playerState")
+        lastSaved = data
     }
 
     private func restore() {

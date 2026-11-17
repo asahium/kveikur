@@ -415,6 +415,9 @@ public final class PlaybackEngine: @unchecked Sendable {
             guard let self, !self.wantsPlaying, self.generation == gen, self.engine.isRunning else { return }
             self.engine.stop()
             self.releaseHog()
+            #if os(iOS)
+            try? AVAudioSession.sharedInstance().setActive(false, options: .notifyOthersOnDeactivation)
+            #endif
             self.publishSignalPath()
         }
         idleStop = work
