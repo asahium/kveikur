@@ -3,7 +3,7 @@
 IOS_SIM ?= iPhone 17 Pro
 # Team of the first "Apple Development" certificate (Xcode → Settings → Accounts creates one, a free Apple ID works).
 TEAM ?= $(shell security find-certificate -c "Apple Development" -p 2>/dev/null | openssl x509 -noout -subject 2>/dev/null | sed -n 's/.*OU *= *\([A-Z0-9]*\).*/\1/p')
-DEVICE ?= $(shell xcrun devicectl list devices 2>/dev/null | awk '/available \(paired\)/ && !/simulated/ {for (i=1;i<=NF;i++) if ($$i ~ /^[0-9A-F]{8}-/) {print $$i; exit}}')
+DEVICE ?= $(shell xcrun devicectl list devices 2>/dev/null | awk '/physical/ && /(available|connected)/ {for (i=1;i<=NF;i++) if ($$i ~ /^[0-9A-F]{8}-/) {print $$i; exit}}')
 
 build:
 	swift build -c release
