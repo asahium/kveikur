@@ -28,11 +28,11 @@ public final class MetadataStore: @unchecked Sendable {
     }
 
     public func cached(_ path: String) -> TrackMetadata? {
-        memory.object(forKey: path as NSString)?.value
+        memory.object(forKey: path.pathKey as NSString)?.value
     }
 
     private func remember(_ m: TrackMetadata) {
-        memory.setObject(Box(m), forKey: m.path as NSString)
+        memory.setObject(Box(m), forKey: m.path.pathKey as NSString)
     }
 
     /// Resolves tags for files of one folder; `update` is called on the main actor in batches.

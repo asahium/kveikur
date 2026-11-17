@@ -7,6 +7,13 @@ public struct SearchRow: Sendable {
     public let album: String?
 }
 
+extension String {
+    /// File system APIs hand out the same name as NFC or NFD; byte-keyed stores (SQLite, NSCache) need one form.
+    public var pathKey: String { precomposedStringWithCanonicalMapping }
+
+    var isPathKey: Bool { utf8.elementsEqual(pathKey.utf8) }
+}
+
 /// Persistent index of tag data and music folders. Thread-safe.
 public final class LibraryStore: @unchecked Sendable {
     private let db: SQLiteDB
@@ -39,6 +46,20 @@ public final class LibraryStore: @unchecked Sendable {
             CREATE TABLE IF NOT EXISTS folders(path TEXT PRIMARY KEY, root TEXT NOT NULL) WITHOUT ROWID;
             CREATE INDEX IF NOT EXISTS folders_root ON folders(root);
             """)
+        dropDecomposedPaths()
+    }
+
+    private func dropDecomposedPaths() {
+        for (table, column) in [("tracks", "path"), ("folders", "path")] {
+            guard let s = try? db.prepare("SELECT \(column) FROM \(table)") else { continue }
+            var bad: [String] = []
+            while s.step() { if let p = s.string(0), !p.isPathKey { bad.append(p) } }
+            guard !bad.isEmpty else { continue }
+            try? db.transaction {
+                let d = try db.prepare("DELETE FROM \(table) WHERE \(column) = ?")
+                for p in bad { d.bind([p]).run() }
+            }
+        }
     }
 
     private func locked<T>(_ body: () throws -> T) rethrows -> T {
@@ -53,8 +74,9 @@ public final class LibraryStore: @unchecked Sendable {
             try? db.transaction {
                 let stmt = try db.prepare("INSERT OR REPLACE INTO tracks(\(Self.columns)) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)")
                 for t in tracks {
+                    let path = t.path.pathKey
                     stmt.bind([
-                        t.path, (t.path as NSString).deletingLastPathComponent, t.mtime, t.size,
+                        path, (path as NSString).deletingLastPathComponent, t.mtime, t.size,
                         t.title, t.artist, t.album, t.albumArtist, t.genre, t.composer, t.year,
                         t.trackNumber, t.trackTotal, t.discNumber, t.discTotal, t.duration,
                         t.format?.codec, t.format?.sampleRate, t.format?.bitDepth, t.format?.channels,
@@ -90,7 +112,7 @@ public final class LibraryStore: @unchecked Sendable {
     public func tracks(inFolder folder: String) -> [String: TrackMetadata] {
         locked {
             guard let s = try? db.prepare("SELECT \(Self.columns) FROM tracks WHERE folder = ?") else { return [:] }
-            s.bind([folder])
+            s.bind([folder.pathKey])
             var out: [String: TrackMetadata] = [:]
             while s.step() {
                 let t = row(s)
@@ -103,7 +125,7 @@ public final class LibraryStore: @unchecked Sendable {
     public func track(path: String) -> TrackMetadata? {
         locked {
             guard let s = try? db.prepare("SELECT \(Self.columns) FROM tracks WHERE path = ?") else { return nil }
-            s.bind([path])
+            s.bind([path.pathKey])
             return s.step() ? row(s) : nil
         }
     }
@@ -112,7 +134,7 @@ public final class LibraryStore: @unchecked Sendable {
     func stamps(underRoot root: String) -> [String: (Double, Int64)] {
         locked {
             guard let s = try? db.prepare("SELECT path, mtime, size FROM tracks WHERE path >= ? AND path < ?") else { return [:] }
-            s.bind([root + "/", root + "0"])
+            s.bind([root.pathKey + "/", root.pathKey + "0"])
             var out: [String: (Double, Int64)] = [:]
             while s.step() { out[s.string(0) ?? ""] = (s.double(1), Int64(s.int(2) ?? 0)) }
             return out
@@ -124,7 +146,7 @@ public final class LibraryStore: @unchecked Sendable {
         locked {
             try? db.transaction {
                 let s = try db.prepare("DELETE FROM tracks WHERE path = ?")
-                for p in paths { s.bind([p]).run() }
+                for p in paths { s.bind([p.pathKey]).run() }
             }
         }
     }
@@ -132,17 +154,17 @@ public final class LibraryStore: @unchecked Sendable {
     func replaceFolders(root: String, folders: [String]) {
         locked {
             try? db.transaction {
-                try db.prepare("DELETE FROM folders WHERE root = ?").bind([root]).run()
+                try db.prepare("DELETE FROM folders WHERE root = ?").bind([root.pathKey]).run()
                 let s = try db.prepare("INSERT OR IGNORE INTO folders(path, root) VALUES(?, ?)")
-                for f in folders { s.bind([f, root]).run() }
+                for f in folders { s.bind([f.pathKey, root.pathKey]).run() }
             }
         }
     }
 
     public func removeRoot(_ root: String) {
         locked {
-            try? db.prepare("DELETE FROM tracks WHERE path >= ? AND path < ?").bind([root + "/", root + "0"]).run()
-            try? db.prepare("DELETE FROM folders WHERE root = ?").bind([root]).run()
+            try? db.prepare("DELETE FROM tracks WHERE path >= ? AND path < ?").bind([root.pathKey + "/", root.pathKey + "0"]).run()
+            try? db.prepare("DELETE FROM folders WHERE root = ?").bind([root.pathKey]).run()
         }
     }
 

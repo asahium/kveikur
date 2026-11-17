@@ -158,6 +158,33 @@ final class LibraryTests: XCTestCase {
         store.replaceFolders(root: "/Music", folders: ["/Music", "/Music/A"])
         XCTAssertEqual(store.allFolders(), ["/Music", "/Music/A"])
     }
+
+    func testDecomposedPathsMatchComposed() throws {
+        let nfc = "/Music/toe/04. 街のどこかで.mp3"
+        let nfd = nfc.decomposedStringWithCanonicalMapping
+        XCTAssertFalse(nfc.utf8.elementsEqual(nfd.utf8))
+
+        let url = FileManager.default.temporaryDirectory.appendingPathComponent("\(UUID()).sqlite")
+        _ = try LibraryStore(url: url)
+        let raw = try SQLiteDB(path: url.path)
+        try raw.prepare("INSERT INTO tracks(path, folder, mtime, size) VALUES(?, '/Music/toe', 1, 1)").bind([nfd]).run()
+
+        let store = try LibraryStore(url: url)
+        XCTAssertEqual(store.trackCount(), 0)
+
+        var t = TrackMetadata(path: nfd, mtime: 1, size: 1)
+        t.title = "街のどこかで"
+        store.upsert([t])
+        XCTAssertEqual(store.track(path: nfc)?.title, t.title)
+        XCTAssertEqual(store.tracks(inFolder: "/Music/toe").count, 1)
+
+        let meta = MetadataStore(library: store)
+        let exp = expectation(description: "load")
+        _ = meta.load(folder: "/Music/toe", files: [FileStamp(url: URL(fileURLWithPath: nfc), mtime: 1, size: 1)]) { _ in exp.fulfill() }
+        wait(for: [exp], timeout: 2)
+        XCTAssertEqual(meta.cached(nfd)?.title, t.title)
+        XCTAssertEqual(meta.cached(nfc)?.title, t.title)
+    }
 }
 
 /// Reads and decodes every file under $KVEIKUR_SAMPLES; skipped when unset.
