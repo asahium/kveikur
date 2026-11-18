@@ -3,14 +3,14 @@ import IOKit.ps
 import KveikurCore
 
 let usage = """
-    kveikur-lyrics: finds lyrics for the Kveikur library and word-syncs them on-device with Whisper.
+    kveikur-lyrics: finds lyrics for the Kveikur library and word-syncs them on-device
+    (Demucs vocal separation, then MMS forced alignment; needs uv and ffmpeg).
     Results go to Kveikur's lyrics cache, so the app shows them without any setup.
 
     usage: kveikur-lyrics [options] [folder …]
       folder          limit to these folders or files (default: Kveikur's library roots)
-      --model NAME    small (216 MB, default) or turbo (632 MB, more accurate, slower)
       --no-fetch      don't search online, only word-sync lyrics that are already there
-      --no-align      only download lyrics, no Whisper
+      --no-align      only download lyrics, no word sync
       --exclude NAME  skip folders with this name (repeatable; default: OST)
       --retry         try again tracks that failed before
       --limit N       stop after N tracks that needed work
@@ -18,11 +18,9 @@ let usage = """
       --battery       keep going on battery power (default: wait for the charger)
       --fast          normal priority instead of background
       --dry-run       only list what would be done
-      --verbose       print what Whisper heard
     """
 
 struct Options {
-    var model = SpeechAligner.Model.small
     var fetch = true
     var align = true
     var excluded: Set<String> = []
@@ -44,9 +42,6 @@ func parse() -> Options {
     }
     while let a = args.popFirst() {
         switch a {
-        case "--model":
-            guard let m = SpeechAligner.Model(rawValue: value()) else { print(usage); exit(2) }
-            o.model = m
         case "--no-fetch": o.fetch = false
         case "--no-align": o.align = false
         case "--exclude": o.excluded.insert(value().lowercased())
@@ -56,7 +51,6 @@ func parse() -> Options {
         case "--battery": o.battery = true
         case "--fast": o.fast = true
         case "--dry-run": o.dryRun = true
-        case "--verbose": SpeechAligner.verbose = true
         case "-h", "--help": print(usage); exit(0)
         default:
             if a.hasPrefix("-") { print("unknown option \(a)\n"); print(usage); exit(2) }
@@ -95,6 +89,8 @@ func line(_ s: String) {
 }
 
 let o = parse()
+// A worker that died must surface as an error on write, not kill this process.
+signal(SIGPIPE, SIG_IGN)
 if !o.fast {
     // Darwin background band: throttled CPU and disk, so playback and everything else win.
     setpriority(PRIO_DARWIN_PROCESS, 0, PRIO_DARWIN_BG)
@@ -131,6 +127,7 @@ var state = State.load()
 let done = DispatchSemaphore(value: 0)
 Task.detached {
     var stats: [String: Int] = [:]
+    var aligner: Aligner?
     var worked = 0
     for (n, t) in tracks.enumerated() {
         guard worked < o.limit else { break }
@@ -138,6 +135,11 @@ Task.detached {
         let name = "[\(n + 1)/\(tracks.count)] \(t.artist ?? t.albumArtist ?? "?") — \(t.displayTitle)"
 
         var lyrics = await service.local(for: url)
+        // Word timings from the earlier Whisper version of this tool are redone.
+        if let l = lyrics, l.source.hasSuffix(" + Whisper") {
+            lyrics?.source = String(l.source.dropLast(" + Whisper".count))
+            lyrics = lyrics.map { var x = $0; x.lines = x.lines.map { var y = $0; y.words = nil; return y }; return x }
+        }
         if lyrics?.rank == 2 { stats["already word-synced", default: 0] += 1; continue }
 
         if lyrics == nil {
@@ -163,14 +165,17 @@ Task.detached {
         }
         let t0 = Date()
         do {
-            l = try await SpeechAligner.shared.align(l, url: url, model: o.model) { p in
-                line(String(format: "Downloading the %@ model: %.0f%%", o.model.rawValue, p * 100))
+            if aligner == nil {
+                line("Starting the aligner (the first run downloads about 1.5 GB of models)…")
+                aligner = try Aligner(background: !o.fast)
             }
+            l = try aligner!.align(l, url: url)
             service.store(l, for: url)
             state.failed[t.path] = nil
             line(String(format: "%@: word-synced in %.0fs", name, Date().timeIntervalSince(t0)))
-            stats["word-synced with Whisper", default: 0] += 1
+            stats["word-synced", default: 0] += 1
         } catch {
+            if error is Aligner.Failure == false || !(aligner?.running ?? false) { aligner = nil }
             state.failed[t.path] = error.localizedDescription
             line("\(name): couldn't word-sync (\(error.localizedDescription))")
             stats["word-sync failed", default: 0] += 1

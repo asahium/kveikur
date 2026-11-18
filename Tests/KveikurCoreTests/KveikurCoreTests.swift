@@ -1022,27 +1022,3 @@ final class WordSyncTests: XCTestCase {
         XCTAssertFalse(LRCParser.serialize(l, words: false).contains("<"))
     }
 }
-
-final class LyricsAlignerTests: XCTestCase {
-    func testAnchorsAndGaps() throws {
-        let lyrics = LRCParser.parse("Hello darkness my old friend\nI've come to talk with you again", source: "Test")
-        let heard = [("hello", 1.0), ("darkness", 1.5), ("my", 2.2), ("friend", 3.0), ("ive", 5.0), ("come", 5.4),
-                     ("talk", 6.0), ("with", 6.4), ("you", 6.7), ("again", 7.1)]
-            .map { RecognizedWord(text: $0.0, start: $0.1, end: $0.1 + 0.3) }
-        let r = try XCTUnwrap(LyricsAligner.align(lyrics, to: heard, duration: 10))
-        XCTAssertEqual(r.coverage, 10.0 / 12.0, accuracy: 0.01)
-        let first = try XCTUnwrap(r.lyrics.lines[0].words)
-        XCTAssertEqual(first.map(\.text).joined(), "Hello darkness my old friend")
-        XCTAssertEqual(r.lyrics.lines[0].time, 1.0)
-        let old = first[3].time
-        XCTAssertTrue(old > 2.2 && old < 3.0, "unmatched word lands between its neighbours, got \(old)")
-        XCTAssertEqual(r.lyrics.lines[1].words?[2].time ?? 0, 5.6, accuracy: 0.5)
-        XCTAssertEqual(r.lyrics.rank, 2)
-    }
-
-    func testRejectsUnrelatedAudio() {
-        let lyrics = LRCParser.parse("one two three four five six seven eight", source: "Test")
-        let heard = ["[Music]"].map { RecognizedWord(text: $0, start: 0, end: 30) }
-        XCTAssertNil(LyricsAligner.align(lyrics, to: heard, duration: 30))
-    }
-}

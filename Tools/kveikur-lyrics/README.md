@@ -1,6 +1,8 @@
 # kveikur-lyrics
 
-Walks the Kveikur library, downloads missing lyrics (LRCLIB, NetEase, Genius when a token is set in the app) and gives word timing to lyrics that only have line timing or none, using Whisper on the Neural Engine ([WhisperKit](https://github.com/argmaxinc/WhisperKit)). Results go to Kveikur's lyrics cache, so the app shows them as word-synced without any setup.
+Walks the Kveikur library, downloads missing lyrics (LRCLIB, NetEase, Genius when a token is set in the app) and gives word timing to lyrics that only have line timing or none. Results go to Kveikur's lyrics cache, so the app shows them as word-synced without any setup.
+
+Needs [uv](https://docs.astral.sh/uv/) and ffmpeg (`brew install uv ffmpeg`).
 
 ```sh
 swift build -c release
@@ -9,9 +11,21 @@ swift build -c release
 .build/release/kveikur-lyrics ~/Music/Bleachers  # one folder or file
 ```
 
-- Runs in the Darwin background band (throttled CPU and disk), one track at a time, and waits while the Mac is on battery. `--fast` and `--battery` turn that off.
-- Tracks that already have word-synced lyrics are skipped; tracks Whisper couldn't match are remembered in `~/Library/Application Support/Kveikur/lyrics-batch.json` and skipped next time unless `--retry` is given. Ctrl-C and rerun to continue.
-- Whisper only provides anchors: recognized words are matched to the known lyrics, and words it missed are spread between them by length. With line-synced lyrics every word stays inside its line.
-- Models download on first use into `~/Library/Application Support/Kveikur/whisper`: `small` (216 MB, default) or `--model turbo` (632 MB, hears singing better).
+## How the timing is made
+
+The lyrics are known, so nothing is transcribed: [Demucs](https://github.com/adefossez/demucs) separates the vocals, then the [MMS forced aligner](https://pytorch.org/audio/stable/tutorials/forced_alignment_for_multilingual_data_tutorial.html) finds where each word of the given text is sung (any language, romanized through uroman). With line-synced lyrics every line is aligned inside its own window. A fit score against a time-reversed baseline rejects lyrics that don't belong to the recording. This runs in `aligner/align.py`, which uv sets up on first use (about 1.5 GB of packages and models).
+
+Checked against ten human word-synced LRCLIB tracks (English, Korean, Japanese, rap):
+
+| Method | Median word-start error | Per track |
+| --- | --- | --- |
+| Whisper transcription (WhisperKit small/turbo) on the mix | often no alignment at all | 10 s – 3 min |
+| stable-ts forced alignment with Whisper turbo | 70–200 ms, some tracks off by tens of seconds | 20–140 s |
+| Demucs + MMS, line windows | 30–100 ms, no failures | ~25 s |
+
+## Behaviour
+
+- Runs in the Darwin background band (`taskpolicy -b`), one track at a time, and waits while the Mac is on battery. `--fast` and `--battery` turn that off.
+- Tracks that already have word-synced lyrics are skipped; tracks that failed are remembered in `~/Library/Application Support/Kveikur/lyrics-batch.json` and skipped next time unless `--retry` is given. Ctrl-C and rerun to continue.
 
 `--help` lists every option.
