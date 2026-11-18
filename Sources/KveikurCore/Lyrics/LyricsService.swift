@@ -30,21 +30,44 @@ public struct LyricsQuery: Sendable {
 
 public protocol LyricsProvider: Sendable {
     var name: String { get }
-    /// Raw LRC or plain text, nil when nothing was found.
+    /// Best `Lyrics.rank` this source can return; providers that can't beat what's already found are skipped.
+    var maxRank: Int { get }
+    /// Raw Lyricsfile, YRC, LRC or plain text; nil when nothing was found.
     func fetch(_ q: LyricsQuery) async throws -> String?
+}
+
+public extension LyricsProvider {
+    var maxRank: Int { 2 }
+}
+
+/// Case, accents and punctuation folded away, for comparing titles and artist names across services.
+func lyricsKey(_ s: String) -> String {
+    let f = s.folding(options: [.caseInsensitive, .diacriticInsensitive, .widthInsensitive], locale: nil)
+    return String(f.unicodeScalars.filter { CharacterSet.alphanumerics.contains($0) }.map(Character.init))
 }
 
 private let userAgent = "Kveikur/0.1 (macOS music player)"
 
-/// lrclib.net: free, no key, returns synced LRC.
+/// lrclib.net: free, no key. Records carry a Lyricsfile, word-synced when `hasWordSync` is set.
 public struct LRCLibProvider: LyricsProvider {
     public let name = "LRCLIB"
     public init() {}
 
-    private struct Item: Decodable {
+    struct Item: Decodable {
+        let artistName: String?
         let syncedLyrics: String?
         let plainLyrics: String?
+        let lyricsfile: String?
+        let hasWordSync: Bool?
         let duration: Double?
+
+        var best: String? {
+            if hasWordSync == true, let f = lyricsfile, !f.isEmpty { return f }
+            if let s = syncedLyrics, !s.isEmpty { return s }
+            if let p = plainLyrics, !p.isEmpty { return p }
+            return nil
+        }
+        var rank: Int { hasWordSync == true ? 2 : (syncedLyrics?.isEmpty == false ? 1 : 0) }
     }
 
     public func fetch(_ q: LyricsQuery) async throws -> String? {
@@ -54,26 +77,29 @@ public struct LRCLibProvider: LyricsProvider {
         return try await lookup(q, title: cleaned)
     }
 
+    /// The exact match first; if it isn't word-synced, a search may still find a word-synced record of the same song.
     private func lookup(_ q: LyricsQuery, title: String) async throws -> String? {
-        var q = q
-        q.title = title
         var get = URLComponents(string: "https://lrclib.net/api/get")!
         get.queryItems = [
-            URLQueryItem(name: "track_name", value: q.title),
+            URLQueryItem(name: "track_name", value: title),
             URLQueryItem(name: "artist_name", value: q.artist),
             URLQueryItem(name: "album_name", value: q.album ?? ""),
             URLQueryItem(name: "duration", value: String(Int(q.duration.rounded()))),
         ]
-        if let item: Item = try await request(get.url!), let text = item.syncedLyrics ?? item.plainLyrics, !text.isEmpty {
+        let exact: Item? = try await request(get.url!)
+        if let exact, exact.rank == 2, let text = exact.best { return text }
+
+        var search = URLComponents(string: "https://lrclib.net/api/search")!
+        search.queryItems = [URLQueryItem(name: "track_name", value: title), URLQueryItem(name: "artist_name", value: q.artist)]
+        let items: [Item] = (try await request(search.url!)) ?? []
+        let artist = lyricsKey(q.artist)
+        let close = items.filter { abs(($0.duration ?? q.duration) - q.duration) < 4 }
+        if let w = close.first(where: { $0.rank == 2 && lyricsKey($0.artistName ?? "").contains(artist) }), let text = w.best {
             return text
         }
-        var search = URLComponents(string: "https://lrclib.net/api/search")!
-        search.queryItems = [URLQueryItem(name: "track_name", value: q.title), URLQueryItem(name: "artist_name", value: q.artist)]
-        guard let items: [Item] = try await request(search.url!), !items.isEmpty else { return nil }
-        let close = items.filter { abs(($0.duration ?? q.duration) - q.duration) < 4 }
+        if let text = exact?.best { return text }
         let pool = close.isEmpty ? items : close
-        let best = pool.first { $0.syncedLyrics?.isEmpty == false } ?? pool.first
-        return best?.syncedLyrics ?? best?.plainLyrics
+        return pool.max { $0.rank < $1.rank }?.best
     }
 
     private func request<T: Decodable>(_ url: URL) async throws -> T? {
@@ -85,9 +111,81 @@ public struct LRCLibProvider: LyricsProvider {
     }
 }
 
+/// NetEase Cloud Music's public web API: word-synced YRC for much of its catalogue, line LRC otherwise.
+/// Only a song whose artist, title and length all match is used.
+public struct NetEaseProvider: LyricsProvider {
+    public let name = "NetEase"
+    public init() {}
+
+    private struct Search: Decodable {
+        struct Result: Decodable { let songs: [Song]? }
+        struct Song: Decodable { let id: Int; let name: String; let duration: Double?; let artists: [Artist] }
+        struct Artist: Decodable { let name: String }
+        let result: Result?
+    }
+
+    private struct LyricResponse: Decodable {
+        struct Body: Decodable { let lyric: String? }
+        let lrc: Body?
+        let yrc: Body?
+    }
+
+    public func fetch(_ q: LyricsQuery) async throws -> String? {
+        let title = q.cleanedTitle.isEmpty ? q.title : q.cleanedTitle
+        var c = URLComponents(string: "https://music.163.com/api/search/get")!
+        c.queryItems = [URLQueryItem(name: "s", value: "\(q.artist) \(title)"), URLQueryItem(name: "type", value: "1"),
+                        URLQueryItem(name: "limit", value: "10")]
+        guard let found: Search = try await request(c.url!) else { return nil }
+        // The same song is often uploaded several times, and only some copies carry YRC.
+        var lineSynced: String?
+        for song in (found.result?.songs ?? []).filter({ matches($0, q, title: title) }).prefix(3) {
+            var l = URLComponents(string: "https://music.163.com/api/song/lyric/v1")!
+            l.queryItems = ["lv", "yv"].map { URLQueryItem(name: $0, value: "1") } + [URLQueryItem(name: "id", value: String(song.id))]
+            guard let r: LyricResponse = try await request(l.url!) else { continue }
+            if let yrc = Self.body(r.yrc?.lyric) { return yrc }
+            lineSynced = lineSynced ?? Self.body(r.lrc?.lyric)
+        }
+        return lineSynced
+    }
+
+    /// Drops the JSON credit lines NetEase puts in front.
+    private static func body(_ raw: String?) -> String? {
+        let lines = (raw ?? "").components(separatedBy: .newlines).filter { !$0.hasPrefix("{") && !$0.isEmpty }
+        return lines.isEmpty ? nil : lines.joined(separator: "\n")
+    }
+
+    private func matches(_ s: Search.Song, _ q: LyricsQuery, title: String) -> Bool {
+        if let d = s.duration, q.duration > 0, abs(d / 1000 - q.duration) > 3 { return false }
+        let a = lyricsKey(q.artist), t = lyricsKey(title), st = lyricsKey(s.name)
+        guard !t.isEmpty, st == t || st.hasPrefix(t) || t.hasPrefix(st) && !st.isEmpty else { return false }
+        return s.artists.contains { x in
+            let k = lyricsKey(x.name)
+            return !k.isEmpty && (a.contains(k) || k.contains(a))
+        }
+    }
+
+    /// Once NetEase has set its cookies, search ignores the query and returns trending songs.
+    private static let session: URLSession = {
+        let c = URLSessionConfiguration.ephemeral
+        c.httpShouldSetCookies = false
+        c.httpCookieAcceptPolicy = .never
+        return URLSession(configuration: c)
+    }()
+
+    private func request<T: Decodable>(_ url: URL) async throws -> T? {
+        var req = URLRequest(url: url, timeoutInterval: 10)
+        req.setValue("Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7)", forHTTPHeaderField: "User-Agent")
+        req.setValue("https://music.163.com", forHTTPHeaderField: "Referer")
+        let (data, resp) = try await Self.session.data(for: req)
+        guard (resp as? HTTPURLResponse)?.statusCode == 200 else { return nil }
+        return try? JSONDecoder().decode(T.self, from: data)
+    }
+}
+
 /// Genius: search through the API (token required), lyrics scraped from the song page. Plain text only.
 public struct GeniusProvider: LyricsProvider {
     public let name = "Genius"
+    public let maxRank = 0
     let token: String
 
     public init(token: String) { self.token = token }
@@ -220,38 +318,59 @@ public final class LyricsService: @unchecked Sendable {
             return LRCParser.parse(text, source: source)
         }
         let base = url.deletingPathExtension()
-        for ext in ["lrc", "LRC", "txt"] {
+        for ext in ["lyricsfile.yaml", "lyricsfile", "lrc", "LRC", "txt"] {
             if let text = try? String(contentsOf: base.appendingPathExtension(ext), encoding: .utf8) {
-                return LRCParser.parse(text, source: ".\(ext.lowercased()) file")
+                let name = ext.hasPrefix("lyricsfile") ? "Lyricsfile" : ".\(ext.lowercased()) file"
+                return LyricsFormat.parse(text, source: name)
             }
         }
         if let embedded = await MetadataReader.embeddedLyrics(url), !embedded.isEmpty {
-            return LRCParser.parse(embedded, source: "Embedded tags")
+            return LyricsFormat.parse(embedded, source: "Embedded tags")
         }
         return nil
     }
 
-    /// Asks providers in order, preferring synced lyrics. A clean miss (no network errors) is remembered for `missTTL`.
+    /// Asks providers in order and keeps the best: word-synced, then line-synced, then plain.
+    /// A clean miss (no network errors) is remembered for `missTTL`.
     public func fetchOnline(_ q: LyricsQuery, providers: [LyricsProvider]) async -> Lyrics? {
-        var plainFallback: Lyrics?
+        var best: Lyrics?
         var failed = false
         for p in providers {
+            if let b = best, b.rank >= p.maxRank { continue }
             let raw: String?
             do { raw = try await p.fetch(q) } catch { failed = true; continue }
             guard let raw, !raw.isEmpty else { continue }
-            let lyrics = LRCParser.parse(raw, source: p.name)
-            if lyrics.synced {
-                store(lyrics, for: q.url)
-                return lyrics
-            }
-            if plainFallback == nil { plainFallback = lyrics }
+            var lyrics = LyricsFormat.parse(raw, source: p.name)
+            // "Love Letters - Metronomy" header lines.
+            let credits = Set([q.title + q.artist, q.artist + q.title, q.cleanedTitle + q.artist, q.artist + q.cleanedTitle].map(lyricsKey))
+            lyrics.lines.removeAll { credits.contains(lyricsKey($0.text)) }
+            guard !lyrics.lines.isEmpty else { continue }
+            // Better timing doesn't make up for a mangled text (NetEase spells Icelandic "Þú" as "Pú").
+            if let b = best, b.synced, Self.similarity(b, lyrics) < 0.9 { continue }
+            if best == nil || lyrics.rank > best!.rank { best = lyrics }
+            if lyrics.rank == 2 { break }
         }
-        if let l = plainFallback {
-            store(l, for: q.url)
+        if let best {
+            store(best, for: q.url)
         } else if !failed, !Task.isCancelled {
             FileManager.default.createFile(atPath: missFile(q.url).path, contents: Data())
         }
-        return plainFallback
+        return best
+    }
+
+    /// Dice coefficient over character bigrams of the whole text, case and punctuation ignored.
+    static func similarity(_ a: Lyrics, _ b: Lyrics) -> Double {
+        func bigrams(_ l: Lyrics) -> [String: Int] {
+            let s = Array(l.lines.map { $0.text.lowercased() }.joined().filter { $0.isLetter || $0.isNumber })
+            var out: [String: Int] = [:]
+            for i in s.indices.dropLast() { out[String(s[i...i + 1]), default: 0] += 1 }
+            return out
+        }
+        let x = bigrams(a), y = bigrams(b)
+        let total = x.values.reduce(0, +) + y.values.reduce(0, +)
+        guard total > 0 else { return 1 }
+        let shared = x.reduce(0) { $0 + min($1.value, y[$1.key] ?? 0) }
+        return 2 * Double(shared) / Double(total)
     }
 
     public func store(_ lyrics: Lyrics, for url: URL) {
@@ -260,7 +379,9 @@ public final class LyricsService: @unchecked Sendable {
         try? text.write(to: cacheFile(url), atomically: true, encoding: .utf8)
         try? lyrics.source.write(to: sourceFile(url), atomically: true, encoding: .utf8)
         if saveSidecar {
-            try? text.write(to: url.deletingPathExtension().appendingPathExtension("lrc"), atomically: true, encoding: .utf8)
+            // Word stamps confuse players that only know line LRC.
+            try? LRCParser.serialize(lyrics, words: false)
+                .write(to: url.deletingPathExtension().appendingPathExtension("lrc"), atomically: true, encoding: .utf8)
         }
     }
 }

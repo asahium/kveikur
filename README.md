@@ -8,7 +8,7 @@ What it does:
 
 - **Playback.** Gapless, bit-perfect when it can be. It matches the device sample rate, can take exclusive mode, and supports ReplayGain and a 10-band EQ with AutoEQ import.
 - **Formats.** FLAC, ALAC, AAC, MP3, WAV, AIFF, Ogg Vorbis and Opus. Single-image rips with a CUE sheet play as separate tracks.
-- **Lyrics.** Uses a `.lrc` file or embedded tags, then LRCLIB or Genius. Synced lines scroll, and there is a full-screen karaoke view.
+- **Lyrics.** Uses a `.lyricsfile.yaml` or `.lrc` file or embedded tags, then LRCLIB, NetEase or Genius, preferring word-synced over line-synced. Words light up as they are sung, and there is a full-screen karaoke view.
 - **Tags and files.** Edit tags, rename and move to Trash from the right-click menu only, so no keystroke can delete anything.
 - **Duplicates.** Finds the same album stored twice and marks the copy to keep.
 - **Missing albums.** Lists each artist's studio albums from MusicBrainz that aren't in your folders.

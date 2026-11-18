@@ -20,6 +20,7 @@ final class AppModel: ObservableObject {
     @Published var showTagTitles: Bool { didSet { defaults.set(showTagTitles, forKey: "showTagTitles") } }
     @Published var lyricsAutoFetch: Bool { didSet { defaults.set(lyricsAutoFetch, forKey: "lyricsAutoFetch") } }
     @Published var geniusToken: String { didSet { defaults.set(geniusToken, forKey: "geniusToken") } }
+    @Published var lyricsNetEase: Bool { didSet { defaults.set(lyricsNetEase, forKey: "lyricsNetEase") } }
     @Published var saveLyricsSidecar: Bool {
         didSet { defaults.set(saveLyricsSidecar, forKey: "saveLyricsSidecar"); lyrics.saveSidecar = saveLyricsSidecar }
     }
@@ -52,6 +53,7 @@ final class AppModel: ObservableObject {
         showTagTitles = defaults.object(forKey: "showTagTitles") as? Bool ?? true
         lyricsAutoFetch = defaults.object(forKey: "lyricsAutoFetch") as? Bool ?? true
         geniusToken = defaults.string(forKey: "geniusToken") ?? ""
+        lyricsNetEase = defaults.object(forKey: "lyricsNetEase") as? Bool ?? true
         saveLyricsSidecar = defaults.bool(forKey: "saveLyricsSidecar")
         let pl = defaults.string(forKey: "playlistsFolder").map { URL(fileURLWithPath: $0) } ?? PlaylistStore.defaultFolder()
         playlistsFolder = pl
@@ -110,6 +112,7 @@ final class AppModel: ObservableObject {
 
     func lyricsProviders() -> [LyricsProvider] {
         var p: [LyricsProvider] = [LRCLibProvider()]
+        if lyricsNetEase { p.append(NetEaseProvider()) }
         if !geniusToken.isEmpty { p.append(GeniusProvider(token: geniusToken)) }
         return p
     }

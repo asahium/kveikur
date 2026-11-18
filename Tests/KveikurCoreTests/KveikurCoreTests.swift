@@ -945,3 +945,80 @@ final class DiscographyTests: XCTestCase {
         XCTAssertTrue(MusicBrainz.pick([Hit(id: "c", name: "Other", score: 70, aliases: nil)], for: "Nobody").isEmpty)
     }
 }
+
+final class WordSyncTests: XCTestCase {
+    func testLyricsfile() throws {
+        let yaml = """
+        version: '1.0'
+        metadata:
+          title: Bohemian Rhapsody
+          artist: "Ke \\"personajes\\""
+          duration_ms: 149000
+          instrumental: false
+        lines:
+        - text: Mamá
+          start_ms: 17340
+          end_ms: 19751
+          words:
+          - text: Mamá
+            start_ms: 17340
+        - text: A un hombre maté
+          start_ms: 19780
+          end_ms: 22820
+          words:
+          - text: 'A '
+            start_ms: 19780
+          - text: 'un '
+            start_ms: 20255
+          - text: 'hombre '
+            start_ms: 20465
+          - text: maté
+            start_ms: 21174
+        - text: ''
+          start_ms: 23000
+        plain: |
+          Mamá
+
+          A un hombre maté
+        """
+        let l = try XCTUnwrap(LyricsFormat.parse(yaml, source: "LRCLIB"))
+        XCTAssertTrue(l.wordSynced)
+        XCTAssertEqual(l.lines.count, 3)
+        XCTAssertEqual(l.lines[1].words?.map(\.text).joined(), "A un hombre maté")
+        XCTAssertEqual(l.lines[1].words?[2].time ?? 0, 20.465, accuracy: 0.001)
+        XCTAssertEqual(l.lines[1].end ?? 0, 22.82, accuracy: 0.001)
+        XCTAssertEqual(l.lines[2].text, "")
+        let fill = l.lines[1].wordFill(at: 20.5)
+        XCTAssertEqual(fill[0], 1)
+        XCTAssertEqual(fill[3], 0)
+        XCTAssertGreaterThan(fill[2], 0)
+
+        let plainOnly = LyricsfileParser.parse("version: '1.0'\nmetadata:\n  title: x\n  artist: y\nplain: |\n  one\n\n  two\n", source: "x")
+        XCTAssertEqual(plainOnly?.lines.map(\.text), ["one", "", "two"])
+        XCTAssertNil(LyricsfileParser.parse("version: '1.0'\nmetadata:\n  title: x\n  artist: y\n  instrumental: true\n", source: "x"))
+    }
+
+    func testYRC() {
+        let raw = """
+        {"t":0,"c":[{"tx":"作词: "}]}
+        [16240,3600](16240,270,0)We (16510,210,0)were (16720,570,0)young
+        [20050,3600](20050,150,0)I (20200,450,0)close
+        """
+        let l = LyricsFormat.parse(raw, source: "NetEase")
+        XCTAssertTrue(l.wordSynced)
+        XCTAssertEqual(l.lines.map(\.text), ["We were young", "I close"])
+        XCTAssertEqual(l.lines[0].words?[1].end ?? 0, 16.72, accuracy: 0.001)
+    }
+
+    func testEnhancedLRCRoundTrip() {
+        let raw = "[ar:x]\n[00:12.00]<00:12.00>Some <00:12.80>words<00:13.40>\n[00:14.00]plain line\n"
+        let l = LRCParser.parse(raw, source: "file")
+        XCTAssertEqual(l.lines[0].text, "Some words")
+        XCTAssertEqual(l.lines[0].words?.count, 2)
+        XCTAssertEqual(l.lines[0].words?[1].end ?? 0, 13.4, accuracy: 0.001)
+        XCTAssertNil(l.lines[1].words)
+        let back = LRCParser.parse(LRCParser.serialize(l), source: "file")
+        XCTAssertEqual(back.lines, l.lines)
+        XCTAssertFalse(LRCParser.serialize(l, words: false).contains("<"))
+    }
+}

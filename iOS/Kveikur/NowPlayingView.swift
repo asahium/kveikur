@@ -298,7 +298,16 @@ private struct LyricsTab: View {
                 VStack(alignment: .leading, spacing: 16) {
                     ForEach(l.lines.indices, id: \.self) { i in
                         let line = l.lines[i]
-                        Text(line.text.isEmpty ? "♪" : line.text)
+                        Group {
+                            if i == active, let words = line.words, !words.isEmpty {
+                                let fill = line.wordFill(at: clock.time - l.offset)
+                                words.indices.reduce(Text(verbatim: "")) { acc, w in
+                                    acc + Text(verbatim: words[w].text).foregroundColor(Nord.n4.opacity(0.4).mix(with: Nord.n6, by: fill[w]))
+                                }
+                            } else {
+                                Text(line.text.isEmpty ? "♪" : line.text)
+                            }
+                        }
                             .font(.system(size: i == active ? 26 : 22, weight: .bold))
                             .foregroundStyle(l.synced ? (i == active ? Nord.n6 : Nord.n4.opacity(0.35)) : Nord.n4)
                             .frame(maxWidth: .infinity, alignment: .leading)

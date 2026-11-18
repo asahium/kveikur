@@ -199,7 +199,13 @@ private struct SyncedLines: View {
     private func line(_ i: Int) -> some View {
         let text = lyrics.lines[i].text.isEmpty ? "♪" : lyrics.lines[i].text
         let distance = active.map { abs($0 - i) } ?? 3
-        if i == active {
+        if i == active, lyrics.lines[i].words != nil {
+            WordSyncText.make(lyrics.lines[i], at: time - lyrics.offset, sung: Color(nsColor: Theme.nord6),
+                              unsung: Color(nsColor: Theme.nord4).opacity(0.35))
+                .font(.system(size: 38, weight: .bold))
+                .shadow(color: Theme.accent.opacity(0.35), radius: 12)
+                .fixedSize(horizontal: false, vertical: true)
+        } else if i == active {
             let p = progress(i)
             Text(text)
                 .font(.system(size: 38, weight: .bold))

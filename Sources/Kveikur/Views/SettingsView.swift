@@ -51,8 +51,9 @@ struct SettingsView: View {
             Section("Lyrics") {
                 Toggle("Search online automatically when no local lyrics", isOn: $app.lyricsAutoFetch)
                 Toggle("Save .lrc next to the track", isOn: $app.saveLyricsSidecar)
+                Toggle("Also ask NetEase Cloud Music", isOn: $app.lyricsNetEase)
                 SecureField("Genius API token (optional)", text: $app.geniusToken)
-                Text("LRCLIB provides synced lyrics without a key. Genius adds plain lyrics when a token is set (genius.com/api-clients).")
+                Text("Word-synced lyrics win over line-synced, line-synced over plain. LRCLIB needs no key; NetEase fills in word timing LRCLIB lacks and only sends the artist and title. Genius adds plain lyrics when a token is set (genius.com/api-clients).")
                     .font(.caption).foregroundStyle(.secondary)
             }
             ScrobbleSettings(s: app.scrobbler)

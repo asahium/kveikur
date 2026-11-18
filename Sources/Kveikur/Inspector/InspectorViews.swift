@@ -273,7 +273,14 @@ struct LyricsTab: View {
                 LazyVStack(alignment: .leading, spacing: 9) {
                     ForEach(l.lines.indices, id: \.self) { i in
                         let line = l.lines[i]
-                        Text(line.text.isEmpty ? "♪" : line.text)
+                        Group {
+                            if i == active, line.words != nil {
+                                WordSyncText.make(line, at: clock.time - l.offset, sung: Color(nsColor: Theme.nord6),
+                                                  unsung: Color(nsColor: Theme.nord4).opacity(0.45))
+                            } else {
+                                Text(line.text.isEmpty ? "♪" : line.text)
+                            }
+                        }
                             .font(.system(size: 16, weight: i == active ? .bold : .medium))
                             .foregroundStyle(i == active ? AnyShapeStyle(.primary) : AnyShapeStyle(.tertiary))
                             .frame(maxWidth: .infinity, alignment: .leading)
@@ -292,7 +299,7 @@ struct LyricsTab: View {
         }
         Divider()
         HStack(spacing: 8) {
-            Text(l.source + (l.synced ? " · synced" : " · plain")).font(.system(size: 11)).foregroundStyle(.secondary)
+            Text("\(l.source) · \(l.syncLabel)").font(.system(size: 11)).foregroundStyle(.secondary)
             Spacer()
             if l.synced {
                 Button { model.adjustOffset(-0.25) } label: { Image(systemName: "minus") }.help("Lyrics earlier")

@@ -31,6 +31,7 @@ final class MobileModel: ObservableObject {
 
     @Published private(set) var roots: [LibraryRoot] = []
     @Published var lyricsAutoFetch: Bool { didSet { defaults.set(lyricsAutoFetch, forKey: "lyricsAutoFetch") } }
+    @Published var lyricsNetEase: Bool { didSet { defaults.set(lyricsNetEase, forKey: "lyricsNetEase") } }
     @Published var message: String?
 
     private let defaults = UserDefaults.standard
@@ -45,6 +46,7 @@ final class MobileModel: ObservableObject {
         player = PlayerController(metadata: metadata)
         scrobbler = ScrobbleController(player: player, metadata: metadata)
         lyricsAutoFetch = defaults.object(forKey: "lyricsAutoFetch") as? Bool ?? true
+        lyricsNetEase = defaults.object(forKey: "lyricsNetEase") as? Bool ?? true
         scrobbler.openURL = { UIApplication.shared.open($0) }
         scrobbler.onListen = { m, at in Task.detached { store.recordPlay(m, at: at) } }
         scrobbler.onImport = { plays in await Task.detached { store.importPlays(plays) }.value }
@@ -164,7 +166,7 @@ final class MobileModel: ObservableObject {
         }
     }
 
-    func lyricsProviders() -> [LyricsProvider] { [LRCLibProvider()] }
+    func lyricsProviders() -> [LyricsProvider] { lyricsNetEase ? [LRCLibProvider(), NetEaseProvider()] : [LRCLibProvider()] }
 
     // MARK: State
 

@@ -39,7 +39,8 @@ struct SettingsView: View {
                 .listRowBackground(Nord.raised)
 
                 Section("Lyrics") {
-                    Toggle("Search LRCLIB automatically", isOn: $model.lyricsAutoFetch)
+                    Toggle("Search online automatically", isOn: $model.lyricsAutoFetch)
+                    Toggle("Also ask NetEase Cloud Music", isOn: $model.lyricsNetEase)
                 }
                 .listRowBackground(Nord.raised)
 
