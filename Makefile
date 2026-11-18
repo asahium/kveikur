@@ -1,6 +1,7 @@
-.PHONY: build app run debug test clean icon ios ios-sim ios-device dmg
+.PHONY: build app run debug test clean icon ios ios-sim ios-device print-device ios-autosign ios-autosign-off dmg
 
 IOS_SIM ?= iPhone 17 Pro
+LAUNCH ?= 1
 # Team of the first "Apple Development" certificate (Xcode → Settings → Accounts creates one, a free Apple ID works).
 TEAM ?= $(shell security find-certificate -c "Apple Development" -p 2>/dev/null | openssl x509 -noout -subject 2>/dev/null | sed -n 's/.*OU *= *\([A-Z0-9]*\).*/\1/p')
 # The phone build takes over the Mac's Last.fm session (read at build time, never committed).
@@ -47,7 +48,32 @@ ios-device:
 		-destination 'generic/platform=iOS' -derivedDataPath ../.build/ios-device -allowProvisioningUpdates \
 		DEVELOPMENT_TEAM=$(TEAM) build
 	xcrun devicectl device install app --device $(DEVICE) .build/ios-device/Build/Products/Debug-iphoneos/Kveikur.app
-	xcrun devicectl device process launch --device $(DEVICE) dev.kveikur.mobile
+	@if [ "$(LAUNCH)" = 1 ]; then xcrun devicectl device process launch --device $(DEVICE) dev.kveikur.mobile; fi
+
+print-device:
+	@echo $(DEVICE)
+
+AGENT = $(HOME)/Library/LaunchAgents/dev.kveikur.ios-resign.plist
+
+# Re-sign the iPhone beta over Wi-Fi before the free 7-day signature runs out.
+ios-autosign:
+	chmod +x scripts/ios-resign.sh
+	@mkdir -p $(HOME)/Library/LaunchAgents
+	@printf '%s\n' '<?xml version="1.0" encoding="UTF-8"?>' \
+		'<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">' \
+		'<plist version="1.0"><dict>' \
+		'<key>Label</key><string>dev.kveikur.ios-resign</string>' \
+		'<key>ProgramArguments</key><array><string>$(CURDIR)/scripts/ios-resign.sh</string></array>' \
+		'<key>StartInterval</key><integer>10800</integer>' \
+		'<key>RunAtLoad</key><true/>' \
+		'</dict></plist>' > $(AGENT)
+	-launchctl bootout gui/$$(id -u) $(AGENT) 2>/dev/null
+	launchctl bootstrap gui/$$(id -u) $(AGENT)
+	@echo "Installed. Log: ~/Library/Logs/Kveikur/ios-resign.log"
+
+ios-autosign-off:
+	-launchctl bootout gui/$$(id -u) $(AGENT)
+	rm -f $(AGENT)
 
 icon:
 	swift scripts/make-icon.swift /tmp/kveikur-icon.png

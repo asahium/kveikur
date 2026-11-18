@@ -21,7 +21,7 @@ Hold `⌘` for a moment to see every shortcut.
 
 Download the `.dmg` from [releases](https://github.com/asahium/kveikur/releases) and drag Kveikur into `/Applications`. It needs an Apple Silicon Mac with macOS 15 or later. The build is not notarized, so open it the first time with right-click → Open.
 
-An iPhone beta lives in `iOS/`: run `make ios` and run it from Xcode.
+An iPhone beta lives in `iOS/`: `make ios-device` builds and installs it on a paired iPhone. A free Apple ID signs it for 7 days; `make ios-autosign` re-signs it over Wi‑Fi before that runs out.
 
 ## Build
 
