@@ -16,7 +16,7 @@ let usage = """
       --limit N       stop after N tracks that needed work
       --no-sidecar    don't write <track>.lyricsfile.yaml next to the tracks
       --battery       keep going on battery power (default: wait for the charger)
-      --fast          normal priority instead of background
+      --fast          normal priority instead of nice 10 / utility
       --dry-run       only list what would be done
     """
 
@@ -92,8 +92,8 @@ let o = parse()
 // A worker that died must surface as an error on write, not kill this process.
 signal(SIGPIPE, SIG_IGN)
 if !o.fast {
-    // Darwin background band: throttled CPU and disk, so playback and everything else win.
-    setpriority(PRIO_DARWIN_PROCESS, 0, PRIO_DARWIN_BG)
+    // Nice, not the Darwin background band: that one is inherited by the worker and makes it 5× slower.
+    setpriority(PRIO_PROCESS, 0, 10)
 }
 
 let prefs = UserDefaults(suiteName: "dev.kveikur.player")

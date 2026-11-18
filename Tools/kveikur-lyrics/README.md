@@ -25,8 +25,8 @@ Checked against ten human word-synced LRCLIB tracks (English, Korean, Japanese, 
 
 ## Behaviour
 
-- Runs in the Darwin background band (`taskpolicy -b`), one track at a time, and waits while the Mac is on battery. `--fast` and `--battery` turn that off.
-- Run it unattended with `nohup caffeinate -i .build/release/kveikur-lyrics > ~/Library/Logs/Kveikur/lyrics-batch.log 2>&1 &`.
+- Runs at nice 10 with the worker clamped to the utility QoS class, one track at a time, and waits while the Mac is on battery. `--fast` and `--battery` turn that off. (The Darwin background band was tried and made alignment about five times slower.)
+- `./background.sh start|status|stop` runs it under launchd, detached from the terminal, logging to `~/Library/Logs/Kveikur/lyrics-batch.log`.
 - Tracks that already have word-synced lyrics are skipped; tracks that failed are remembered in `~/Library/Application Support/Kveikur/lyrics-batch.json` and skipped next time unless `--retry` is given. Ctrl-C and rerun to continue.
 
 `--help` lists every option.

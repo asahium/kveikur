@@ -36,8 +36,8 @@ final class Aligner {
 
     init(background: Bool) throws {
         var args = ["uv", "run", "--quiet", "--project", Self.directory.path, "python", Self.directory.appendingPathComponent("align.py").path]
-        // Background band for the worker too: throttled CPU and disk, GPU work yields to the foreground.
-        if background { args = ["/usr/sbin/taskpolicy", "-b"] + args }
+        // Utility clamp: yields to anything interactive but may still use the performance cores.
+        if background { args = ["/usr/sbin/taskpolicy", "-c", "utility"] + args }
         process.executableURL = URL(fileURLWithPath: "/usr/bin/env")
         process.arguments = args
         process.standardInput = input
