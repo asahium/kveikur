@@ -74,7 +74,8 @@ public struct Lyrics: Hashable, Codable, Sendable {
 public enum LyricsFormat {
     public static func parse(_ raw: String, source: String) -> Lyrics {
         let text = raw.trimmingCharacters(in: .whitespacesAndNewlines)
-        if text.hasPrefix("version:") || text.hasPrefix("---\nversion:"), let l = LyricsfileParser.parse(text, source: source) {
+        let head = text.components(separatedBy: .newlines).first { !$0.hasPrefix("#") && $0 != "---" && !$0.isEmpty } ?? ""
+        if head.hasPrefix("version:"), let l = LyricsfileParser.parse(text, source: source) {
             return l
         }
         // NetEase prefixes credits as JSON lines.
@@ -235,6 +236,68 @@ public enum LyricsfileParser {
         }
         guard let plain = root["plain"]?.string, !plain.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else { return nil }
         return LRCParser.parse(plain, source: source)
+    }
+
+    public struct Metadata {
+        public var title: String
+        public var artist: String
+        public var album: String?
+        public var duration: TimeInterval
+
+        public init(title: String, artist: String, album: String?, duration: TimeInterval) {
+            self.title = title
+            self.artist = artist
+            self.album = album
+            self.duration = duration
+        }
+    }
+
+    /// Lyricsfile 1.0. Every string is double-quoted: word texts carry their trailing space.
+    public static func serialize(_ lyrics: Lyrics, metadata m: Metadata, comment: String? = nil) -> String {
+        func q(_ s: String) -> String {
+            var out = "\""
+            for u in s.unicodeScalars {
+                switch u {
+                case "\"": out += "\\\""
+                case "\\": out += "\\\\"
+                case "\n": out += "\\n"
+                case "\t": out += "\\t"
+                default: out.unicodeScalars.append(u)
+                }
+            }
+            return out + "\""
+        }
+        func ms(_ t: TimeInterval) -> Int { Int((t * 1000).rounded()) }
+        var out: [String] = []
+        if let comment { out.append("# \(comment)") }
+        out.append("version: \"1.0\"")
+        out.append("metadata:")
+        out.append("  title: \(q(m.title))")
+        out.append("  artist: \(q(m.artist))")
+        if let album = m.album { out.append("  album: \(q(album))") }
+        out.append("  duration_ms: \(ms(m.duration))")
+        if lyrics.offset != 0 { out.append("  offset_ms: \(ms(lyrics.offset))") }
+        let timed = lyrics.lines.filter { $0.time != nil }
+        if timed.isEmpty {
+            out.append("lines: []")
+        } else {
+            out.append("lines:")
+            for l in timed {
+                out.append("- text: \(q(l.text))")
+                out.append("  start_ms: \(ms(l.time!))")
+                if let e = l.end ?? l.words?.last?.end { out.append("  end_ms: \(ms(e))") }
+                guard let ws = l.words, !ws.isEmpty else { continue }
+                out.append("  words:")
+                for w in ws {
+                    out.append("  - text: \(q(w.text))")
+                    out.append("    start_ms: \(ms(w.time))")
+                    if let e = w.end { out.append("    end_ms: \(ms(e))") }
+                }
+            }
+        }
+        out.append("plain: |-")
+        for l in lyrics.lines { out.append(l.text.isEmpty ? "" : "  " + l.text) }
+        return out.joined(separator: "\n") + "\n"
     }
 }
 

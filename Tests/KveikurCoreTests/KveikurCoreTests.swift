@@ -947,6 +947,26 @@ final class DiscographyTests: XCTestCase {
 }
 
 final class WordSyncTests: XCTestCase {
+    func testLyricsfileRoundTrip() throws {
+        let src = LRCParser.parse("""
+            [offset:250]
+            [00:01.00]<00:01.00>Say <00:01.40>"hi" <00:01.90>\\o/<00:02.50>
+            [00:03.00]Þú ert: # not a comment
+            """, source: "Test")
+        let meta = LyricsfileParser.Metadata(title: "Song: \"One\"", artist: "Ásgeir", album: nil, duration: 180)
+        let text = LyricsfileParser.serialize(src, metadata: meta, comment: "written by a test")
+        let back = try XCTUnwrap(LyricsFormat.parse(text, source: "Lyricsfile") as Lyrics?)
+        XCTAssertEqual(back.offset, 0.25, accuracy: 0.001)
+        XCTAssertEqual(back.lines.map(\.text), src.lines.map(\.text))
+        XCTAssertEqual(back.lines[0].words?.map(\.text), ["Say ", "\"hi\" ", "\\o/"])
+        XCTAssertEqual(back.lines[0].words?[1].time ?? 0, 1.4, accuracy: 0.001)
+        XCTAssertEqual(back.lines[0].words?[2].end ?? 0, 2.5, accuracy: 0.001)
+        XCTAssertNil(back.lines[1].words)
+
+        let plain = LyricsFormat.parse(LyricsfileParser.serialize(LRCParser.parse("One\n\nTwo", source: "T"), metadata: meta), source: "L")
+        XCTAssertEqual(plain.lines.map(\.text), ["One", "", "Two"])
+    }
+
     func testLyricsfile() throws {
         let yaml = """
         version: '1.0'

@@ -1,6 +1,6 @@
 # kveikur-lyrics
 
-Walks the Kveikur library, downloads missing lyrics (LRCLIB, NetEase, Genius when a token is set in the app) and gives word timing to lyrics that only have line timing or none. Results go to Kveikur's lyrics cache, so the app shows them as word-synced without any setup.
+Walks the Kveikur library, downloads missing lyrics (LRCLIB, NetEase, Genius when a token is set in the app) and gives word timing to lyrics that only have line timing or none. Results go to Kveikur's lyrics cache, so the app shows them as word-synced without any setup, and to `<track>.lyricsfile.yaml` next to each track ([Lyricsfile](https://lrclib.net), the format LRCGET uses), so they survive moving or renaming folders. Files it didn't write itself (marked by a `# kveikur-lyrics` first line) are never overwritten; `--no-sidecar` turns this off.
 
 Needs [uv](https://docs.astral.sh/uv/) and ffmpeg (`brew install uv ffmpeg`).
 
@@ -26,6 +26,7 @@ Checked against ten human word-synced LRCLIB tracks (English, Korean, Japanese, 
 ## Behaviour
 
 - Runs in the Darwin background band (`taskpolicy -b`), one track at a time, and waits while the Mac is on battery. `--fast` and `--battery` turn that off.
+- Run it unattended with `nohup caffeinate -i .build/release/kveikur-lyrics > ~/Library/Logs/Kveikur/lyrics-batch.log 2>&1 &`.
 - Tracks that already have word-synced lyrics are skipped; tracks that failed are remembered in `~/Library/Application Support/Kveikur/lyrics-batch.json` and skipped next time unless `--retry` is given. Ctrl-C and rerun to continue.
 
 `--help` lists every option.
