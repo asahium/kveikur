@@ -9,6 +9,7 @@ Vocals are separated with Demucs (htdemucs), then the lyrics are force-aligned t
 multilingual MMS aligner (romanized through uroman). When every sung line already has a time, each
 line is aligned inside its own window, which keeps repeats and backing vocals from pulling words away.
 """
+import gc
 import json
 import os
 import re
@@ -181,12 +182,22 @@ def main():
         raw = raw.strip()
         if not raw:
             continue
+        fatal = False
         try:
             reply = align(json.loads(raw))
         except Exception as e:
             reply = {"ok": False, "reason": f"{type(e).__name__}: {e}"}
+            fatal = "out of memory" in str(e)
+        # MPS keeps freed blocks cached; without this the pool grows track after track.
+        gc.collect()
+        if DEVICE == "mps":
+            torch.mps.empty_cache()
+        if fatal:
+            reply["restart"] = True
         sys.stdout.write(json.dumps(reply, ensure_ascii=False) + "\n")
         sys.stdout.flush()
+        if fatal:
+            sys.exit(3)
 
 
 if __name__ == "__main__":

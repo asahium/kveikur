@@ -122,6 +122,8 @@ if let token = prefs?.string(forKey: "geniusToken"), !token.isEmpty { providers.
 
 let service = LyricsService()
 var state = State.load()
+// Failures caused by the worker itself (memory, crashes) say nothing about the track.
+state.failed = state.failed.filter { !$0.value.contains("Error:") && !$0.value.contains("aligner exited") }
 let marker = "kveikur-lyrics"
 
 /// `<track>.lyricsfile.yaml`, so the lyrics move with the music. Files not written by this tool are left alone.
@@ -184,7 +186,14 @@ Task.detached {
                 line("Starting the aligner (the first run downloads about 1.5 GB of models)…")
                 aligner = try Aligner(background: !o.fast)
             }
-            let synced = try aligner!.align(l, url: url)
+            let synced: Lyrics
+            do {
+                synced = try aligner!.align(l, url: url)
+            } catch let f as Aligner.Failure where f.retryable {
+                aligner = try Aligner(background: !o.fast)
+                synced = try aligner!.align(l, url: url)
+            }
+            if aligner!.handled >= 40 { aligner = nil }
             service.store(synced, for: url)
             state.failed[t.path] = nil
             line(String(format: "%@: word-synced in %.0fs", name, Date().timeIntervalSince(t0)))

@@ -6,6 +6,8 @@ import KveikurCore
 final class Aligner {
     struct Failure: LocalizedError {
         let reason: String
+        /// The worker ran out of memory and quit; a fresh one may well manage the same track.
+        var retryable = false
         var errorDescription: String? { reason }
     }
 
@@ -21,6 +23,7 @@ final class Aligner {
         struct Word: Decodable { let text: String; let start: Double; let end: Double }
         let ok: Bool
         let reason: String?
+        let restart: Bool?
         let lines: [[Word]?]?
     }
 
@@ -47,6 +50,8 @@ final class Aligner {
     }
 
     var running: Bool { process.isRunning }
+    /// Tracks sent so far; the caller recycles the worker now and then to keep its memory bounded.
+    private(set) var handled = 0
 
     deinit { process.terminate() }
 
@@ -65,8 +70,9 @@ final class Aligner {
         data.append(0x0A)
         try input.fileHandleForWriting.write(contentsOf: data)
         let reply = try JSONDecoder().decode(Reply.self, from: readLine())
+        handled += 1
         guard reply.ok, let timed = reply.lines, timed.count == lyrics.lines.count else {
-            throw Failure(reason: reply.reason ?? "no answer from the aligner")
+            throw Failure(reason: reply.reason ?? "no answer from the aligner", retryable: reply.restart == true)
         }
         var out = lyrics
         var lastEnd = 0.0
