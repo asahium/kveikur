@@ -33,6 +33,10 @@ make dmg    # build/Kveikur-<version>.dmg
 
 It needs Xcode 16 or newer and has no dependencies. Pushing a `v*` tag publishes a release.
 
+## Tools
+
+[`Tools/`](Tools) holds command-line helpers that are not part of the app, each its own Swift package. [`kveikur-lyrics`](Tools/kveikur-lyrics) finds lyrics for the whole library and word-syncs them on-device with Whisper.
+
 ## License
 
 [MIT](LICENSE)
