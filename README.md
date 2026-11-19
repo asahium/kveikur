@@ -19,7 +19,11 @@ Hold `⌘` for a moment to see every shortcut.
 
 ## Install
 
-Download the `.dmg` from [releases](https://github.com/asahium/kveikur/releases) and drag Kveikur into `/Applications`. It needs an Apple Silicon Mac with macOS 15 or later. The build is not notarized, so open it the first time with right-click → Open.
+```sh
+brew install --cask asahium/tap/kveikur
+```
+
+Or download the `.dmg` from [releases](https://github.com/asahium/kveikur/releases) and drag Kveikur into `/Applications`. It needs an Apple Silicon Mac with macOS 15 or later. The build is not notarized: the cask clears the quarantine flag itself, and a downloaded `.dmg` needs right-click → Open the first time.
 
 An iPhone beta lives in `iOS/`: `make ios-device` builds and installs it on a paired iPhone. A free Apple ID signs it for 7 days; `make ios-autosign` re-signs it over Wi‑Fi before that runs out.
 
